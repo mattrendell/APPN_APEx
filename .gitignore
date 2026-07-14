@@ -47,6 +47,11 @@ QC_Spectral_Tables/
 *.csv
 *.parquet
 
+# Keep CSVs created by ProjectBuilder.py
+!*_ProjectsSummary.csv
+!FieldLog.csv
+!RunOverview.csv
+
 # Logs
 *.log
 APPN_GenricFileStorage.code-workspace
