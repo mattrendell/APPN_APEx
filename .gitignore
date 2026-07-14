@@ -49,6 +49,7 @@ QC_Spectral_Tables/
 
 # Keep CSVs created by ProjectBuilder.py
 !*_ProjectsSummary.csv
+!*_SyncSummary.csv
 !FieldLog.csv
 !RunOverview.csv
 
