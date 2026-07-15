@@ -1,25 +1,14 @@
 # REPLACE WITH RELEVANT NODE INFOMATION
 nodes:  # Top-level key, now containing a list of nodes
-  - name: "USYD_Narrabri"
-    university: "University of Sydney"
-    location: "Narrabri, NSW, Australia"
+  - name: "AU"
+    university: "Adelaide University"
+    location: "Adelaide, SA, Australia"
     SensorPlatforms:
       - GOBI
-      - HIRES
-      - M3M
       - CALVIS
-      - PHENOMATE
-      - MOLE
-      - TEMS
-      - PTEMS
-      - LITERAL
-      - H30T
-      - RHIZO
 
-
-  # - name: "Another_Node" # Add another node here
-  #   university: "University of Sydney"
-  #   location: "Some Other Location"
-  #   SensorPlatforms:
-  #     - GOBI
-  #     - HIRES
+  - name: "UWA"
+    university: "University of Western Australia"
+    location: "Perth, WA, Australia"
+    SensorPlatforms:
+      - GOBI
