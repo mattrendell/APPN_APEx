@@ -1,5 +1,5 @@
 Year,Month,Day,Sensor,Technician,Runs,Site,MakeNotesFile,MakeTableFile,CheckSum
-2026,6,24,CALVIS,Technician,1,UoA,True,True,94389703.0
-2026,6,24,GOBI,Technician,1,UoA,True,True,75501958.0
-2026,7,7,CALVIS,Technician,1,UoA,True,True,89161808.0
-2026,7,7,GOBI,Technician,1,UoA,True,True,70274063.0
+2026,6,24,CALVIS, ,1,Rosedale,True,True,7104680.0
+2026,6,24,GOBI, ,1,Rosedale,True,True,88216935.0
+2026,7,7,CALVIS, ,1,Rosedale,True,True,1876785.0
+2026,7,7,GOBI, ,1,Rosedale,True,True,82989040.0

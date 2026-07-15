@@ -17,12 +17,12 @@ project:
     role: Principal Investigator
     orcid: ''
   sites:
-  - name: 'UoA'
+  - name: 'Rosedale'
     year: 2026
     season: ''
     SubLocation: ''
-    latitude: -34.4863248
-    longitude: 138.6764789
+    latitude: .nan
+    longitude: .nan
     description: ''
     ControlledEnvironment: null
     sensors: [CALVIS, GOBI]
