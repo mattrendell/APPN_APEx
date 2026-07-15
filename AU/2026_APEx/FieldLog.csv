@@ -1,1 +1,5 @@
 Year,Month,Day,Sensor,Technician,Runs,Site,MakeNotesFile,MakeTableFile,CheckSum
+2026,6,24,CALVIS,Technician,1,University of Adelaide,True,True,77688959.0
+2026,6,24,GOBI,Technician,1,University of Adelaide,True,True,58801214.0
+2026,7,7,CALVIS,Technician,1,University of Adelaide,True,True,72461064.0
+2026,7,7,GOBI,Technician,1,University of Adelaide,True,True,53573319.0

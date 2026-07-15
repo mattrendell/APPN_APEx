@@ -2,7 +2,7 @@ project:
   ShortName: 2026_APEx
   FullName: ''
   description: ''
-  start_date: ''
+  start_date: '20260624'
   end_date: ''
   funding_source: ''
   status: ''
@@ -17,12 +17,12 @@ project:
     role: Principal Investigator
     orcid: ''
   sites:
-  - name: ''
-    year: -9999
+  - name: 'University of Adelaide'
+    year: 2026
     season: ''
     SubLocation: ''
-    latitude: .nan
-    longitude: .nan
+    latitude: -34.4863248
+    longitude: 138.6764789
     description: ''
     ControlledEnvironment: null
-    sensors: []
+    sensors: [CALVIS, GOBI]
