@@ -7,8 +7,37 @@ nodes:  # Top-level key, now containing a list of nodes
       - GOBI
       - CALVIS
 
+  - name: "CSU"
+    university: "Charles Sturt University"
+    location: "Wagga Wagga, NSW, Australia"
+    SensorPlatforms:
+      - GOBI
+      - CALVIS
+
+  - name: "DPIRD"
+    university: "Department of Primary Industries and Regional Development"
+    location: "Perth, WA, Australia"
+    SensorPlatforms:
+      - GOBI
+      - CALVIS
+
+  - name: "UQ"
+    university: "University of Queensland"
+    location: "Brisbane, QLD, Australia"
+    SensorPlatforms:
+      - GOBI
+      - CALVIS
+
+  - name: "USYD"
+    university: "University of Sydney"
+    location: "Sydney, NSW, Australia"
+    SensorPlatforms:
+      - GOBI
+      - CALVIS
+
   - name: "UWA"
     university: "University of Western Australia"
     location: "Perth, WA, Australia"
     SensorPlatforms:
       - GOBI
+      - CALVIS
