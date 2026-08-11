@@ -9,7 +9,7 @@
 ## 1. Hard rules (must follow)
 
 - **R1** — All executable code lives inside functions. **No top-level work** other than imports, `__title__`/`__author__` metadata, and the `if __name__ == "__main__":` block.
-- **R2** — **No global variables.** Pass everything via function arguments. The only allowed module-level names are: imports, dunder metadata, and constants in `UPPER_SNAKE_CASE` that are truly immutable.
+- **R2** — **Functions have no hidden inputs.** Everything a function uses arrives through its signature, is defined inside it, or is fetched by an explicit call — bodies never read bare module-level names. No module-level data of any kind (including `UPPER_SNAKE_CASE` "constants"): tunables → argparse → `main()` → arguments; overridable defaults → inline signature defaults (immutable only; repo-relative paths fine, absolute never); fixed facts (physical constants, unit conversions) → a function/frozen dataclass that callers invoke; local details → inside the function. The only allowed module-level names are: imports, dunder metadata, and the git-root bootstrap variable needed to add the repo to `sys.path`.
 - **R3** — `main()` is defined **at the top of the file**, immediately after imports. It reads like pseudocode; complex logic lives in helper functions below.
 - **R4** — All functions use **NumPy-style docstrings** with `Parameters`, `Returns`, and (when relevant) `Raises` / `Notes` sections. Include type hints on signatures.
 - **R5** — Scripts run from the **git repo root**. The git root is resolved with `gitpython` and added to `sys.path` **at module top** (before any `functions.*` imports), and the `__main__` block `chdir`s into it before calling `main()`. All paths in code are relative to the repo root or come from CLI args.
@@ -17,6 +17,25 @@
 - **R7** — **No Jupyter notebooks** for analysis. Notebooks are for teaching/exploration only.
 - **R8** — Prefer existing helpers in `functions.corefunctions` (e.g. `storagefinder`, `pymkdir`, `writemetadata`, `gitmetadata`) over re-implementing them.
 - **R9** — Don't add `try/except` around code unless a *specific* failure mode is being handled. No bare `except:`.
+
+## 1a. Decision ladder — before writing code (should follow)
+
+Stop at the first rung that holds — after reading the code the change
+touches, never instead of it:
+
+1. Does this need to exist?               → no: skip it (YAGNI)
+2. Already in `functions/`?               → import it, don't rewrite (R8)
+3. Stdlib does it?                        → use it
+4. Scientific stack does it?              → use it (numpy/pandas/xarray/geopandas beat hand-rolled loops)
+5. Already an installed dependency?       → use it before adding a new one
+6. A few lines?                           → a few lines — not a class, not a wrapper
+7. Only then: the minimum that works
+
+The ladder is a SHOULD; rungs 2 and 4 overlap MUSTs (R8). Minimal governs
+what gets built *above the floor*, never the floor itself: the canonical
+template, docstrings + type hints, argparse, provenance metadata, and
+dry-run/confirmation layers on destructive operations are never on the
+chopping block.
 
 ## 2. Soft preferences
 
@@ -33,7 +52,7 @@
 
 ## 3. Forbidden patterns
 
-- ❌ Mutable module-level state (`results = []` at top level, then appended inside functions).
+- ❌ Module-level data of any kind (`results = []` at top level, `UPPER_SNAKE_CASE` "constants", paths under the imports).
 - ❌ Importing `*`.
 - ❌ `os.chdir` inside `main()` or helper functions (only allowed in `__main__`).
 - ❌ Hard-coded absolute paths (`/mnt/d/...`) in committed code. Use args / `storagefinder`.
