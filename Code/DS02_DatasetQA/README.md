@@ -1,4 +1,20 @@
-# ELM Validation Panel Extraction
+# Spectral Validation Panel Extraction (QA00)
+
+## Scripts in this folder
+
+| | Per-run (extract + report) | Cross-run (compare + figures) |
+|---|---|---|
+| Panel spectra | `QA00_SpectralValidation.py` | `QA02_SpectralRunComparison.py` |
+| GCP point distances | `QA01_PointDistanceComparison.py` | `QA03_GCPRunComparison.py` |
+
+The per-run scripts open the source data (orthomosaic rasters, GCP
+point layers) and write stable-named artefacts into each run's
+`T1_proc/QC_data/`. The cross-run scripts consume those artefacts
+**only** — they never re-open rasters or geojson — and write comparison
+tables/figures/reports into the routed `QCReports/` folder (project →
+`Documentation/QCReports/`, node → `Documents/QCReports/`, anything
+else requires `--output-dir`). See the [QA03 section](#multi-run-gcp-comparison-qa03)
+below; the rest of this README documents QA00/QA02.
 
 ## Overview
 
@@ -87,72 +103,89 @@ conda install -c conda-forge \
 | `-f, --force` | flag | False | Force re-creation of output files, overwriting existing ones. |
 | `--type` | str | csv | Output file format: `csv` or `parquet`. Parquet is more efficient but requires additional dependencies. |
 | `-s, --skipplot` | flag | False | Skip plot generation (only extract data tables). |
-| `--skip-processing` | flag | False | Skip raster processing; only load existing output files for plotting. |
-| `--save-dir` | str | None | Save copies of extracted spectra to this directory for sharing/archiving. |
-| `--load-dir` | str | None | Load previously extracted spectra from this directory (e.g., from other nodes). |
+| `--skip-processing` | flag | False | Skip raster processing; only load existing output files for reporting. |
 | `-v, --verbose` | flag | False | Enable detailed output for debugging. |
+
+> **Multi-run comparison** (figures across runs/sites/nodes, plus the
+> `--save-dir` / `--load-dir` sharing workflow) lives in
+> `QA02_SpectralRunComparison.py`. QA00 is the per-run extraction + QC
+> report step. QA02 also accepts an inclusive `--start-date` /
+> `--end-date` window (e.g. `2026-06-01` or `20260601`) to limit which
+> runs are compared.
 
 ## Usage Examples
 
 ### Suggested Usage for Sharing files between APPN nodes
-This workflow extracts spectra from your local datasets and saves copies to a shared location, making it easy for other nodes to access and combine with their own data.
+This workflow extracts spectra from your local datasets (QA00), then gathers
+and saves copies to a shared location (QA02), making it easy for other nodes
+to access and combine with their own data.
 
 ```bash
-python QA00_ELMvaliditation.py --path /path/to/APPNfolderstructure --save-dir /path/to/shared/spectra
+python QA00_SpectralValidation.py --path /path/to/APPNfolderstructure
+python QA02_SpectralRunComparison.py --path /path/to/APPNfolderstructure --save-dir /path/to/shared/spectra
 ```
 
 **Parameters:**
 - `--path`: Point to your local APPN dataset root (e.g., `/mnt/d/APPN-42-datastorage/USYD_Narrabri`)
 - `--save-dir`: A local directory that can be easily compressed (zip or tar) then shared with other nodes via filesender or globus
 
-This creates standardized spectral files that other nodes can then load using `--load-dir` to combine all data for comprehensive QC analysis.  
+This creates standardized spectral files that other nodes can then load using
+`QA02_SpectralRunComparison.py --load-dir` to combine all data for
+comprehensive QC analysis.
 
 ### Basic Usage
 Run from within the git repository:
 ```bash
-python QA00_ELMvaliditation.py
+python QA00_SpectralValidation.py
 ```
 
 ### Specify Custom Path
 Search a specific directory:
 ```bash
-python QA00_ELMvaliditation.py --path /path/to/dataset
+python QA00_SpectralValidation.py --path /path/to/dataset
 ```
 
-### Extract Only (Skip Plotting)
-Create data tables without generating plots:
+### Extract Only (Skip Per-run Figures)
+Create data tables and reports without generating figures:
 ```bash
-python QA00_ELMvaliditation.py -s
+python QA00_SpectralValidation.py -s
 ```
 
 ### Force Regeneration
 Overwrite existing output files:
 ```bash
-python QA00_ELMvaliditation.py --force
+python QA00_SpectralValidation.py --force
 ```
 
 ### Use Parquet Format
 More efficient for large datasets:
 ```bash
-python QA00_ELMvaliditation.py --type parquet
+python QA00_SpectralValidation.py --type parquet
 ```
 
-### Save Data for Sharing
-Extract spectra and save copies to a central directory:
+### Save Data for Sharing (QA02)
+Gather extracted spectra and save copies to a central directory:
 ```bash
-python QA00_ELMvaliditation.py --save-dir /path/to/shared/spectra
+python QA02_SpectralRunComparison.py --path /path/to/node --save-dir /path/to/shared/spectra
 ```
 
-### Load External Data
+### Load External Data (QA02)
 Combine local data with spectra from other nodes:
 ```bash
-python QA00_ELMvaliditation.py --load-dir /path/to/external/spectra --type csv
+python QA02_SpectralRunComparison.py --path /path/to/node --load-dir /path/to/external/spectra
 ```
 
-### Quick Re-plotting
-Skip processing, just regenerate plots from existing files:
+### Limit the Comparison to a Date Window (QA02)
+Only compare runs inside an inclusive date range (either bound may be
+omitted; any `pandas`-parseable date form works):
 ```bash
-python QA00_ELMvaliditation.py --skip-processing
+python QA02_SpectralRunComparison.py --path /path/to/node --start-date 2026-06-01 --end-date 2026-08-31
+```
+
+### Quick Re-reporting
+Skip processing, just regenerate reports/figures from existing files:
+```bash
+python QA00_SpectralValidation.py --skip-processing
 ```
 
 ## Expected Folder Structure
@@ -262,7 +295,7 @@ Bad bands are automatically identified and can be excluded from plots:
 ### Verbose Mode
 Use `-v` or `--verbose` for detailed diagnostic output:
 ```bash
-python QA00_ELMvaliditation.py --verbose
+python QA00_SpectralValidation.py --verbose
 ```
 
 ## Notes
@@ -279,6 +312,55 @@ Planned features (see TODO in code):
 - Add reference panel reflectance curves to plots for comparison
 - Additional QA metrics and statistics
 - Automated outlier detection
+
+## Multi-run GCP comparison (QA03)
+
+`QA03_GCPRunComparison.py` is to `QA01_PointDistanceComparison.py` what
+QA02 is to QA00: it gathers the per-run GCP distance tables
+(`QC_GCP[_{Product}]_distances[_{extra}].{csv|parquet}`) and accuracy
+report JSONs written by QA01 across every run under `--path` and
+compares them.
+
+**Inputs**: QA01 artefacts only (run QA01 first). Stats come from the
+report JSON where present and current; missing, stale, or
+foreign-schema reports are recomputed from the distance table with the
+same maths (`Code/functions/gcp_qc`, shared with QA01) — the
+`stats_source` column records which path was used.
+
+**Grouping**: sensor × product layer (`QC_GCP_points` → "all
+products"; `QC_GCP_{Product}_points` → per product; `_extra` filename
+suffixes stay part of the label so duplicate layers in one run plot as
+distinct lines).
+
+**Outputs** (into the routed `QCReports/` dir):
+- `QC_GCP_run_comparison.{parquet,csv}` — per run × product summary
+  (counts, 2D/3D RMSE, mean/median/max, bias magnitude + bearing +
+  fraction + class, QA01 pass/fail).
+- `QC_GCP_{sensor}_metrics.png` — RMSE/median/bias per run.
+- `QC_GCP_{sensor}_bias_vectors.png` — per-run 2D bias vectors on a
+  compass polar axis (systematic-offset drift check).
+- `QC_GCP_{sensor}_per_gcp.png` — per-GCP-id displacement across runs
+  (a single moved marker vs a whole-flight shift).
+- `QC_GCP_run_comparison.md` — overview report embedding the figures
+  with relative paths (renders in the VS Code / GitHub preview).
+
+**Sharing**: `--save-dir` builds a portable container (`tables/` +
+`reports/` + `figures/` + `comparison_figures/` + `manifest.csv`);
+`--load-dir` merges a received container (or any folder of QA01
+tables) into the comparison. `--start-date`/`--end-date` bound the run
+window. Outputs are mtime-cached against every gathered input; use
+`--force` to regenerate.
+
+```bash
+# Project-level comparison (saves to <Project>/Documentation/QCReports/)
+python Code/DS02_DatasetQA/QA03_GCPRunComparison.py --path USYD_Narrabri/2026_APEx
+
+# Build a container to send to another node
+python Code/DS02_DatasetQA/QA03_GCPRunComparison.py --path <node> --save-dir /path/to/share
+
+# Merge a received container into the local comparison
+python Code/DS02_DatasetQA/QA03_GCPRunComparison.py --path <node> --load-dir /path/to/received
+```
 
 ## Contact
 
