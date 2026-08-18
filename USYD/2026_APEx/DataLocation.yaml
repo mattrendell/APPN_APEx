@@ -1,17 +1,21 @@
-# APEX-data/USYD/2026_SIFCalibration/2026I.A.Watson/DataLocation.yaml
+# APEX-data/USYD/2026_APEx/DataLocation.yaml
 #
-# This site dir holds no sensor data in this repo. The master copy lives in the
+# This project holds no sensor data in this repo. The master copy lives in the
 # APPN-42 DataSync estate and must stay inviolate — no APEx process writes into
-# it. The file is host-keyed because it is git-tracked: the same bytes land on
-# every machine this repo reaches, and the APPN-42 mount point differs on each.
-# See the workspace design doc (plan.md, workspace-local) for the host-key rules.
+# it. The pointer sits at project level and re-roots the whole subtree beneath
+# it: a site/sensor/date/run path under this project maps to the same relative
+# path under data_root, so one file covers every site in the project.
+#
+# The file is host-keyed because it is git-tracked: the same bytes land on every
+# machine this repo reaches, and the APPN-42 mount point differs on each. See the
+# workspace design doc (plan.md, workspace-local) for the host-key rules.
 schema: DataLocation/1
 read_only: true          # dataset-wide default; a root may override it
 reason: "Master copy in APPN-42 DataSync estate (inviolate); own NAS + separate RDS backups"
 roots:
   - host: appn           # Windows workstation, via WSL2 (gethostname: ArdenAPPN)
     aliases: [APPN, appn-wsl, ArdenAPPN]
-    data_root: /mnt/d/APPN-42-datastorage/USYD_Narrabri/2026_SIFCalibration/2026I.A.Watson
+    data_root: /mnt/d/APPN-42-datastorage/USYD_Narrabri/2026_APEx
   # - host: mint         # TODO: add once the APPN-42 mount point on mint is fixed.
   #   data_root: ...     # Left out rather than written as "TBC": an unlisted host
   #                      # means "not reachable from here", which is the correct and
