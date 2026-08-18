@@ -1,11 +1,11 @@
-# Trial Info — 2026Narrabri
+# Trial Info — 2026I.A.Watson
 
 Site-specific notes for the trial-information spreadsheet(s)
 in this folder. For the APPN-wide spec see the
 [Plot Delineation protocol — Trial Information](https://github.com/ArdenB/APPN-Aerial-Standard-Operating-Procedures/blob/main/Protocols/PlotProtocols/PlotDelineation/Plot_Delineation.md#joining-trial-information).
 
 ## Current trial info file
-- `2026Narrabri_trial_info.csv` — source: <spreadsheet / contact>,
+- `2026I.A.Watson_trial_info.csv` — source: <spreadsheet / contact>,
   last updated YYYY-MM-DD.
 
 ## Column definitions
@@ -18,7 +18,7 @@ in this folder. For the APPN-wide spec see the
 ## Deprecated files
 | File | Replaced on | Reason | Superseded by |
 | --- | --- | --- | --- |
-| `2026Narrabri_trial_info_YYYYMMDD_deprecated.csv` | YYYY-MM-DD | <reason> | `2026Narrabri_trial_info.csv` |
+| `2026I.A.Watson_trial_info_YYYYMMDD_deprecated.csv` | YYYY-MM-DD | <reason> | `2026I.A.Watson_trial_info.csv` |
 
 ## Known quirks
 - e.g. "Plot 1042 was resown — exclude from emergence stats."

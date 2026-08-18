@@ -1,23 +1,27 @@
 project:
   ShortName: 2026_APEx
-  FullName: ''
-  description: ''
-  start_date: ''
-  end_date: ''
-  funding_source: ''
-  status: ''
+  FullName: Airbone Phenomics Excellence (APEx)
+  description: Program to improve the quality of drone phenomics data collected by
+    the APPN.
+  start_date: 1/1/2026
+  end_date: 1/1/2027
+  funding_source: GRDC
+  status: ongoing
   ProjectCode: ''
   Internal: null
-  researcher:
-    FirstName: ''
-    LastName: ''
-    Title: ''
-    email: ''
-    institution: ''
+  researchers:
+  - FirstName: Arden
+    LastName: Burrell
+    Title: Dr
+    email: arden.burrell@sydney.edu.au
+    institution: University of Sydney
     role: Principal Investigator
     orcid: ''
+  RDS:
+    FullCopy: []
+    Deliverables: []
   sites:
-  - name: 'Narrabri'
+  - name: I.A.Watson
     year: 2026
     season: ''
     SubLocation: ''
@@ -25,4 +29,5 @@ project:
     longitude: .nan
     description: ''
     ControlledEnvironment: null
-    sensors: []
+    sensors:
+    - GOBI: 1

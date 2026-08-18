@@ -1,5 +1,5 @@
 project:
-  ShortName: 2026_General
+  ShortName: 2026_SIFCalibration
   FullName: ''
   description: ''
   start_date: ''
@@ -16,13 +16,18 @@ project:
     institution: ''
     role: Principal Investigator
     orcid: ''
+  RDS:
+    FullCopy: []
+    Deliverables: []
   sites:
-  - name: WyeningCellars
+  - name: I.A.Watson
     year: 2026
-    season: ''
+    season: Winter
     SubLocation: ''
     latitude: .nan
     longitude: .nan
     description: ''
     ControlledEnvironment: null
-    sensors: []
+    sensors:
+    - CALVIS: 1
+    - GOBI: 1

@@ -8,8 +8,8 @@ project:
   status: ''
   ProjectCode: ''
   Internal: null
-  researcher:
-    FirstName: ''
+  researchers:
+  - FirstName: ''
     LastName: ''
     Title: ''
     email: ''

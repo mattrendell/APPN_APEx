@@ -38,6 +38,10 @@ USYD_Narrabri/*/*/*
 !USYD_Narrabri/*/
 !USYD_Narrabri/*/*/
 !USYD_Narrabri/*/*/*/
+# Same dotted-dir problem in the node trees (e.g. USYD/2026_APEx/2026I.A.Watson):
+# re-include site-level directories so git can descend; trailing slash means
+# directories only, so plain files stay governed by the rules above.
+!*/*/*/
 USYD_Narrabri/*/*/*/*
 !USYD_Narrabri/*/*/*/*/
 USYD_Narrabri/*/*/*/*/*
