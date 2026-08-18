@@ -1,0 +1,19 @@
+# APEX-data/USYD/2026_APEx/2026I.A.Watson/DataLocation.yaml
+#
+# This site dir holds no sensor data in this repo. The master copy lives in the
+# APPN-42 DataSync estate and must stay inviolate — no APEx process writes into
+# it. The file is host-keyed because it is git-tracked: the same bytes land on
+# every machine this repo reaches, and the APPN-42 mount point differs on each.
+# See the workspace design doc (plan.md, workspace-local) for the host-key rules.
+schema: DataLocation/1
+read_only: true          # dataset-wide default; a root may override it
+reason: "Master copy in APPN-42 DataSync estate (inviolate); own NAS + separate RDS backups"
+roots:
+  - host: appn           # Windows workstation, via WSL2 (gethostname: ArdenAPPN)
+    aliases: [APPN, appn-wsl, ArdenAPPN]
+    data_root: /mnt/d/APPN-42-datastorage/USYD_Narrabri/2026_APEx/2026I.A.Watson
+  # - host: mint         # TODO: add once the APPN-42 mount point on mint is fixed.
+  #   data_root: ...     # Left out rather than written as "TBC": an unlisted host
+  #                      # means "not reachable from here", which is the correct and
+  #                      # safe answer today. A placeholder would resolve to a path
+  #                      # that does not exist.

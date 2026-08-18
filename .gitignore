@@ -21,6 +21,9 @@ _backups/
 !*SyncSummary.csv
 !*RunOverview.csv
 !*ProjectSummary.yaml
+# Pointer files: a site dir whose data lives outside this repo holds one of
+# these instead of data (host-keyed data_root). Must be tracked.
+!*DataLocation.yaml
 !*NodeSummary.yaml
 !*docker-compose.yml
 # Shared conda env spec — single source of truth across hosts
