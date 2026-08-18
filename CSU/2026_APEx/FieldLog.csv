@@ -1,1 +1,3 @@
 Year,Month,Day,Sensor,Technician,Runs,Site,MakeNotesFile,MakeTableFile,CheckSum
+2026,8,1,CALVIS,Mahdi Taghadosi,1,Wagga Wagga,True,True,90010111.0
+2026,8,1,GOBI,Mahdi Taghadosi,1,Wagga Wagga,True,True,71122366.0
