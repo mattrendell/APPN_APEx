@@ -1,0 +1,29 @@
+# Line-ending policy: this repo is LF everywhere, on every host.
+#
+# `text=auto eol=lf` normalises text to LF in the object store *and* checks it
+# out as LF even on Windows. That matters more here than in a normal repo: the
+# tree is mirrored to the RDS with rsync and cloned on several machines, so a
+# host-dependent line ending would show up as a whole-file diff in a sync
+# dry-run — exactly the "tracked file changed" anomaly that is supposed to mean
+# someone edited data on the RDS.
+#
+# .gitignore allowlists this file (`!.gitattributes`) so it reaches every clone.
+* text=auto eol=lf
+
+# Belt and braces: if a payload format is ever allowlisted into the tree, git
+# must not touch its bytes. Declaring these binary also disables diff/merge on
+# them, which is what you want for sensor data.
+*.7z      binary
+*.bin     binary
+*.jpg     binary
+*.jpeg    binary
+*.las     binary
+*.laz     binary
+*.nc      binary
+*.parquet binary
+*.pdf     binary
+*.png     binary
+*.tif     binary
+*.tiff    binary
+*.xlsx    binary
+*.zip     binary
