@@ -1,4 +1,4 @@
 Run,RunFailed,Notes,Issues,Deviations
-run_00,False,row-aligned,False,False
+run_00,False,row-aligned; line 0 (27m stub) captured at ~half frame rate (10.48ms vs 5.56ms configured) -> undersampled; lines 1-5 nominal,True,False
 run_01,False,range-aligned,False,False
 run_02,False,North-south,False,False
