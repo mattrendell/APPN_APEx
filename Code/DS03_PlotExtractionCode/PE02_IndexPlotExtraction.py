@@ -7,19 +7,33 @@ aggregate statistics for every index using the site's mandatory
 Plot_Layout file
 (``Documentation/Plot_Layout/{YYYYSiteName}_plots.geojson``).
 
-Per manifest the output is a long-format parquet trait table (one row per
-plot x index: mean/median/std/count/valid_fraction plus run metadata)
-written to
-``<run>/T1_proc/PlotExtracts/PE_SI_{REGION}_{METHOD}_plot_metrics[…].parquet``
-with a YAML provenance sidecar, plus a markdown overview report with
-embedded QC figures. PE02 never opens the ``.bin`` orthomosaics — the
-raster boundary is SI00's (DS05 computes maps, DS03 extracts plots).
+Per manifest the outputs land in ``<run>/T1_proc/PlotExtracts/``:
+
+- ``PixelLevel/PE_INDEX_{REGION}_{METHOD}_pixels[…]/`` — long-format
+  per-pixel parquet *dataset*: one zstd part file per plot
+  (``plot_id``, ``index``, ``value``), readable as one table by any
+  parquet dataset reader. The YAML sidecar beside the directory is
+  written last and doubles as the completion marker, so extraction is
+  cached on it and an interrupted run resumes at the first
+  missing/stale plot.
+- ``PlotLevel/PE_INDEX_{REGION}_{METHOD}_plot_metrics[…].parquet`` —
+  long-format trait table (one row per plot x index:
+  count/mean/std/var/min/max/median/skew/kurtosis/normality/p01-p99
+  short percentiles/valid_fraction plus run metadata), derived
+  from the saved pixel dataset, with its own YAML sidecar.
+- ``PlotLevel/PE_INDEX_{REGION}_{METHOD}_plot_percentiles[…].parquet``
+  — only with ``--full-percentiles``: long-format full 0-100
+  percentile profile per plot x index.
+- ``Reports/`` — a markdown overview report with embedded QC figures.
+
+PE02 never opens the ``.bin`` orthomosaics — the raster boundary is
+SI00's (DS05 computes maps, DS03 extracts plots).
 
 Index maps are read per plot through bounding-box windows (``clip_box``
 then ``clip``, the PE01-benchmarked pattern); the NetCDF is opened with
 ``decode_coords="all"`` so the CRS rides on ``spatial_ref``. Extraction
-is cached via ``outputs_up_to_date`` (inputs = index maps + manifest +
-plot file); use ``--force`` to override.
+is cached via ``outputs_up_to_date`` on the sidecars (inputs = index
+maps + manifest + plot file); use ``--force`` to override.
 
 Command-line Arguments
 ----------------------
@@ -33,6 +47,11 @@ Command-line Arguments
     the plots via ``plot_id`` (columns carried into the trait table).
 --indices : str [str ...], optional
     Restrict extraction to these indices (default: all in the manifest).
+    Changing the restriction does not invalidate existing per-plot
+    parts — combine with ``--force``.
+--full-percentiles : flag
+    Also write the full 0-100 percentile profile per plot x index to
+    its own long-format parquet table.
 --force : flag
     Re-create output files even when they are up to date.
 """
@@ -41,7 +60,7 @@ Command-line Arguments
 
 __title__ = "Spectral-index plot extraction"
 __author__ = "Arden Burrell"
-__version__ = "v1.0(13.08.2026)"
+__version__ = "v1.2(19.08.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -86,6 +105,7 @@ if _git_root not in sys.path:
 # ========== Import custom packages ==========
 import Code.functions.core_functions as cf
 import Code.functions.plot_layout as pl
+import Code.functions.plot_extracts as pex
 
 
 # ==================================================================================
@@ -99,16 +119,13 @@ class PE02Config:
         Sensor platform folder names handled by this script.
     si_dirname : str
         Name of the SI00 output folder inside ``T1_proc/``.
-    extracts_dirname : str
-        Name of the output folder inside ``T1_proc/``.
     figures_dirname : str
-        Name of the figure folder inside the extracts folder.
+        Name of the figure folder inside the reports folder.
     headline_index : str
         Index used for the per-plot choropleth figure when present.
     """
     valid_sensors: Tuple[str, ...] = ("GOBI", "CALVIS")
     si_dirname: str = "SpectralIndices"
-    extracts_dirname: str = "PlotExtracts"
     figures_dirname: str = "PE_figures"
     headline_index: str = "NDVI"
 
@@ -237,7 +254,7 @@ def locate_si_manifests(
 
         site_dir = (pathlib.Path(parsed["root"]) / parsed["node"]
                     / parsed["project"] / parsed["site_folder"])
-        extracts_dir = manifest.parents[1] / cfg.extracts_dirname
+        dirs = pex.plotextract_dirs(manifest.parents[1])
 
         region = report.get("region", "unknown")
         method = report.get("method", "unknown")
@@ -248,9 +265,9 @@ def locate_si_manifests(
         if args.plot_variant:
             suffix_parts.append(args.plot_variant)
         suffix = ("_" + "_".join(suffix_parts)) if suffix_parts else ""
-        stem = f"PE_SI_{region}_{method}{suffix}"
+        stem = f"PE_INDEX_{region}_{method}{suffix}"
 
-        outfile = extracts_dir / f"{stem}_plot_metrics.parquet"
+        outfile = dirs["plot"] / f"{stem}_plot_metrics.parquet"
         jobs.append({
             "manifest": manifest,
             "report": report,
@@ -259,11 +276,15 @@ def locate_si_manifests(
             "method": method,
             "gpro_nu": gpro_nu,
             "site_dir": site_dir,
-            "extracts_dir": extracts_dir,
-            "figures_dir": extracts_dir / cfg.figures_dirname,
+            "extracts_dir": dirs["extracts"],
+            "figures_dir": dirs["reports"] / cfg.figures_dirname,
             "outfile": outfile,
+            "percentiles_file": dirs["plot"] / f"{stem}_plot_percentiles.parquet",
             "metadata_outfile": outfile.with_name(f"{outfile.stem}_metadata.yaml"),
-            "report_file": extracts_dir / f"{stem}_report.md",
+            # pixel_dataset is a parquet dataset *directory* (one part per plot)
+            "pixel_dataset": dirs["pixel"] / f"{stem}_pixels",
+            "pixel_metadata_outfile": dirs["pixel"] / f"{stem}_pixels_metadata.yaml",
+            "report_file": dirs["reports"] / f"{stem}_report.md",
             "node": parsed["node"],
             "project": parsed["project"],
             "site": parsed["site_folder"],
@@ -282,10 +303,13 @@ def process_manifest(
         args: argparse.Namespace,
         repo: Optional[git.Repo],
     ) -> Dict[str, Any]:
-    """Extract one manifest's index maps into a per-plot trait table (cached).
+    """Extract one manifest's maps into pixel + trait tables (cached).
 
-    Skips the extraction when the output is newer than all of its inputs
-    (index maps, manifest, plot file) unless ``--force`` is set.
+    Writes the per-plot pixel dataset first (resuming at missing/stale
+    parts), then its sidecar (the completion marker), then derives the
+    trait table from the saved dataset. Fully skipped when both the
+    pixel sidecar and the trait table are newer than all inputs (index
+    maps, manifest, plot file) unless ``--force`` is set.
 
     Parameters
     ----------
@@ -297,7 +321,7 @@ def process_manifest(
         Tunable settings.
     args : argparse.Namespace
         Parsed command-line arguments (``force``, ``indices``,
-        ``skipplot``).
+        ``full_percentiles``, ``skipplot``).
     repo : git.Repo or None
         Repository handle for the provenance sidecar.
 
@@ -308,19 +332,50 @@ def process_manifest(
     """
     plot_file = plotshp.attrs["plot_file"]
     inputs = job["index_maps"] + [job["manifest"], plot_file]
-    if not args.force and cf.outputs_up_to_date([job["outfile"]], inputs):
+    # The pixel sidecar is written last, so it is the completion marker.
+    fresh = (not args.force
+             and len(pex.dataset_parts(job["pixel_dataset"])) > 0
+             and cf.outputs_up_to_date([job["pixel_metadata_outfile"]], inputs)
+             and job["outfile"].is_file()
+             and cf.outputs_up_to_date([job["outfile"]],
+                                       [job["pixel_metadata_outfile"]]))
+    if args.full_percentiles:
+        fresh = (fresh and job["percentiles_file"].is_file()
+                 and cf.outputs_up_to_date([job["percentiles_file"]],
+                                           [job["pixel_metadata_outfile"]]))
+    if fresh:
         metrics = pd.read_parquet(job["outfile"])
         return _summary_row(job, "cached", None,
                             n_indices=int(metrics["index"].nunique()),
                             n_plots=int(metrics["plot_id"].nunique()))
 
     tqdm.write(f"Extracting {job['manifest'].name} started at {pd.Timestamp.now()}.")
-    metrics, issues = extract_index_metrics(
-        job["index_maps"], plotshp, indices=args.indices)
-    if metrics is None or metrics.empty:
+
+    # ========== Per-pixel extraction (per-plot parts; resumes) ==========
+    n_plots_px, n_reused, issues = extract_index_pixels(
+        job["index_maps"], plotshp, job["pixel_dataset"], inputs,
+        indices=args.indices, force=args.force)
+    if n_plots_px == 0:
         issues.append("No plots yielded pixels from the index maps; check the "
                       "plot file and map coverage.")
         return _summary_row(job, "skipped", "; ".join(issues))
+
+    # ========== Pixel-dataset sidecar (written last: completion marker) ==========
+    pixel_meta = cf.build_run_metadata(
+        {**{k: job[k] for k in ["manifest", "index_maps", "region", "method",
+                                "gpro_nu", "pixel_dataset",
+                                "node", "project", "site", "sensor", "date", "run"]},
+         "plot_file": plot_file,
+         "n_plots_with_pixels": n_plots_px,
+         "n_plots_reused": n_reused,
+         "n_plots_total": len(plotshp),
+         "issues": issues},
+        script_path=__file__, repo=repo)
+    cf.write_metadata_yaml(pixel_meta, job["pixel_metadata_outfile"])
+
+    # ========== Metrics from the saved pixel dataset ==========
+    metrics, percentiles = compute_index_metrics(
+        job["pixel_dataset"], full_percentiles=args.full_percentiles)
 
     # ========== Attach run metadata (+ optional trial-info columns) ==========
     for key in ["node", "project", "site", "sensor", "date", "run"]:
@@ -336,8 +391,19 @@ def process_manifest(
             on="plot_id", how="left")
 
     # ========== Save the table + provenance sidecar ==========
-    job["outfile"].parent.mkdir(parents=False, exist_ok=True)
-    metrics.to_parquet(job["outfile"], index=False)
+    job["outfile"].parent.mkdir(parents=True, exist_ok=True)
+    metrics.to_parquet(job["outfile"], index=False, compression="zstd")
+
+    # +++++ Full percentile profile (own table; joined via plot_id) +++++
+    if percentiles is not None:
+        for key in ["node", "project", "site", "sensor", "date", "run"]:
+            percentiles[key] = job[key]
+        percentiles["EM_Region"] = job["region"]
+        percentiles["method"] = job["method"]
+        if job["gpro_nu"] is not None:
+            percentiles["gpro_nu"] = job["gpro_nu"]
+        percentiles.to_parquet(job["percentiles_file"], index=False,
+                               compression="zstd")
     meta = cf.build_run_metadata(
         {**{k: job[k] for k in ["manifest", "index_maps", "region", "method",
                                 "gpro_nu", "outfile",
@@ -360,17 +426,24 @@ def process_manifest(
 
 
 # ==================================================================================
-def extract_index_metrics(
+def extract_index_pixels(
         index_maps: List[pathlib.Path],
         plotshp: gpd.GeoDataFrame,
+        dataset_dir: pathlib.Path,
+        inputs: List[pathlib.Path],
         indices: Optional[List[str]] = None,
-    ) -> Tuple[Optional[pd.DataFrame], List[str]]:
-    """Extract per-plot aggregates for every index in the given maps.
+        force: bool = False,
+    ) -> Tuple[int, int, List[str]]:
+    """Extract per-plot per-pixel index values into a parquet dataset.
 
-    Each plot polygon is read through its own bounding-box window
-    (``clip_box`` then ``clip`` — the PE01-benchmarked pattern), with
-    every index variable in the window aggregated at once, so each map
-    is traversed once per plot regardless of index count.
+    Every map is opened once; each plot polygon is then read through
+    its own bounding-box window (``clip_box`` then ``clip`` — the
+    PE01-benchmarked pattern) across all maps, and the plot's pixel
+    values for every index are written to one zstd part file
+    (atomically: ``.tmp`` then rename). A plot whose part is already
+    newer than every input is skipped without touching the rasters, so
+    an interrupted run resumes. Orphan parts from plots no longer in
+    the plot file are removed at the end.
 
     Parameters
     ----------
@@ -378,34 +451,46 @@ def extract_index_metrics(
         SI00 index maps (NetCDF datasets or single-index GeoTIFFs).
     plotshp : geopandas.GeoDataFrame
         Validated plot polygons with a ``plot_id`` column.
+    dataset_dir : pathlib.Path
+        Output dataset directory (created if missing).
+    inputs : list of pathlib.Path
+        Freshness inputs for the per-plot resume check (index maps,
+        manifest, plot file).
     indices : list of str, optional
-        Restrict to these index names. Default None (all).
+        Restrict to these index names. Default None (all). Changing the
+        restriction does not invalidate existing parts — use *force*.
+    force : bool, optional
+        Clear all existing parts and re-extract everything. Default
+        False.
 
     Returns
     -------
-    pandas.DataFrame or None
-        One row per plot x index: ``plot_id``, ``index``, ``mean``,
-        ``median``, ``std``, ``count``, ``valid_fraction`` (valid pixels
-        over the plot's best-covered index — PE01 semantics, so plot
-        geometry does not deflate the fraction). None when no map could
-        be read.
+    int
+        Plots with at least one pixel written or reused.
+    int
+        Plots reused from fresh existing parts.
     list of str
         Issues encountered (missing CRS, unknown indices, ...).
     """
     issues: List[str] = []
-    frames: List[pd.DataFrame] = []
-    for map_path in index_maps:
-        # SI00 NetCDFs carry the CRS on spatial_ref via decode_coords="all";
-        # GeoTIFFs go through the same xarray accessor path.
-        if map_path.suffix == ".nc":
-            ds = xr.open_dataset(map_path, decode_coords="all")
-        else:
-            da = rioxarray.open_rasterio(map_path, masked=True)
-            ds = da.to_dataset(name=map_path.stem)  # type: ignore[union-attr]
-        try:
+    n_plots_px = 0
+    n_reused = 0
+
+    # ========== Open every map once ==========
+    opened: List[Tuple[Any, xr.Dataset, Any]] = []
+    try:
+        for map_path in index_maps:
+            # SI00 NetCDFs carry the CRS on spatial_ref via decode_coords="all";
+            # GeoTIFFs go through the same xarray accessor path.
+            if map_path.suffix == ".nc":
+                ds = xr.open_dataset(map_path, decode_coords="all")
+            else:
+                da = rioxarray.open_rasterio(map_path, masked=True)
+                ds = da.to_dataset(name=map_path.stem)  # type: ignore[union-attr]
             crs = ds.rio.crs
             if crs is None:
                 issues.append(f"Index map {map_path.name} has no CRS; skipping.")
+                ds.close()
                 continue
             keep = list(ds.data_vars)
             if indices is not None:
@@ -414,31 +499,68 @@ def extract_index_metrics(
                     issues.append(f"Indices not in {map_path.name}: {unknown}.")
                 keep = [v for v in keep if v in set(indices)]
                 if not keep:
+                    ds.close()
                     continue
             sub_ds = ds[keep]
             if "time" in sub_ds.dims:
                 sub_ds = sub_ds.isel(time=0, drop=True)
-            plots = plotshp.to_crs(crs)[["plot_id", "geometry"]]
-            for _, prow in tqdm(plots.iterrows(), total=len(plots),
-                                desc=map_path.stem, leave=False):
-                stats = _plot_window_stats(sub_ds, prow, crs)
-                if stats is not None:
-                    frames.append(stats)
-        finally:
+            opened.append((ds, sub_ds, crs))
+        if not opened:
+            return 0, 0, issues
+
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        if force:
+            for old in dataset_dir.glob("*.parquet*"):
+                old.unlink()
+
+        # +++++ Reproject the plots once per map CRS (row order preserved) +++++
+        per_map_plots = [plotshp.to_crs(crs)[["plot_id", "geometry"]]
+                         for (_, _, crs) in opened]
+
+        for pos in tqdm(range(len(plotshp)), desc=dataset_dir.name, leave=False):
+            pid = plotshp["plot_id"].iloc[pos]
+            part = dataset_dir / f"{cf.safe_filename_component(str(pid))}.parquet"
+            # +++++ Per-plot resume: fresh parts never touch the rasters +++++
+            if not force and cf.outputs_up_to_date([part], inputs):
+                n_plots_px += 1
+                n_reused += 1
+                continue
+            frames: List[pd.DataFrame] = []
+            for (_, sub_ds, crs), plots in zip(opened, per_map_plots):
+                pixels = _plot_window_pixels(sub_ds, plots.iloc[pos], crs)
+                if pixels is not None:
+                    frames.append(pixels)
+            if not frames:
+                if part.is_file():
+                    part.unlink()  # plot lost coverage since the last run
+                continue
+            pex.write_dataset_part(pd.concat(frames, ignore_index=True), part)
+            n_plots_px += 1
+    finally:
+        for ds, _, _ in opened:
             ds.close()
 
-    if len(frames) == 0:
-        return None, issues
-    return pd.concat(frames, ignore_index=True), issues
+    # +++++ Remove orphan parts from plots no longer in the plot file +++++
+    valid_names = {f"{cf.safe_filename_component(str(pid))}.parquet"
+                   for pid in plotshp["plot_id"]}
+    orphans = [p for p in pex.dataset_parts(dataset_dir)
+               if p.name not in valid_names]
+    for orphan in orphans:
+        orphan.unlink()
+    if orphans:
+        warn.warn(f"Removed {len(orphans)} orphan part file(s) from "
+                  f"{dataset_dir.name} (plots no longer in the plot file).")
+
+    return n_plots_px, n_reused, issues
 
 
 # ==================================================================================
-def _plot_window_stats(
+def _plot_window_pixels(
         ds: xr.Dataset,
         prow: pd.Series,
         crs: Any,
     ) -> Optional[pd.DataFrame]:
-    """Aggregate every index variable inside one plot polygon.
+    """Collect the per-pixel values of every index inside one plot polygon.
 
     Parameters
     ----------
@@ -452,8 +574,9 @@ def _plot_window_stats(
     Returns
     -------
     pandas.DataFrame or None
-        One row per index for this plot; None when the clip failed or
-        the window holds no pixels.
+        Long-format rows (``plot_id``, ``index``, ``value``) holding the
+        finite pixels; None when the clip failed or the window holds no
+        pixels.
     """
     try:
         window = ds.rio.clip_box(*prow.geometry.bounds)
@@ -461,27 +584,75 @@ def _plot_window_stats(
     except Exception as er:  # rioxarray raises several types here
         warn.warn(f"Could not clip plot {prow['plot_id']}: {er}. Skipping plot.")
         return None
-    rows: List[Dict[str, Any]] = []
+    frames: List[pd.DataFrame] = []
     for name, da in clipped.data_vars.items():
         vals = da.to_numpy().ravel()
         finite = vals[np.isfinite(vals)]
         if finite.size == 0:
             continue
-        rows.append({
+        frames.append(pd.DataFrame({
             "plot_id": prow["plot_id"],
             "index": str(name),
-            "mean": float(finite.mean()),
-            "median": float(np.median(finite)),
-            "std": float(finite.std(ddof=1)) if finite.size > 1 else 0.0,
-            "count": int(finite.size),
-        })
-    if not rows:
+            "value": finite.astype(np.float32),
+        }))
+    if not frames:
         return None
-    df = pd.DataFrame(rows)
-    # Normalise against the plot's best-covered index (PE01 semantics) so
-    # the bbox/polygon geometry does not deflate the fraction.
-    df["valid_fraction"] = df["count"] / df["count"].max()
-    return df
+    return pd.concat(frames, ignore_index=True)
+
+
+# ==================================================================================
+def compute_index_metrics(
+        dataset_dir: pathlib.Path,
+        full_percentiles: bool = False,
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    """Compute per plot x index metrics from a saved pixel dataset.
+
+    Reads one per-plot part file at a time, so memory stays at one
+    plot's pixels.
+
+    Parameters
+    ----------
+    dataset_dir : pathlib.Path
+        The pixel dataset directory from :func:`extract_index_pixels`.
+    full_percentiles : bool, optional
+        Also build the full 0-100 percentile profile per plot x index.
+        Default False.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per plot x index: ``plot_id``, ``index``, the
+        :func:`pex.group_value_stats` metric set (count/mean/std/var/
+        min/max/median/skew/kurtosis/normality/p01-p99) and
+        ``valid_fraction`` (valid pixels over the plot's best-covered
+        index — PE01 semantics, so plot geometry does not deflate the
+        fraction).
+    pandas.DataFrame or None
+        Long-format full percentile table (``plot_id``, ``index``,
+        ``percentile``, ``value``); None unless *full_percentiles*.
+    """
+    print(f"Computing index metrics from {dataset_dir.name} ...")
+    out: List[pd.DataFrame] = []
+    pctl_out: List[pd.DataFrame] = []
+    for part in tqdm(pex.dataset_parts(dataset_dir),
+                     desc="index metrics", leave=False):
+        pdf = pd.read_parquet(part)
+        if pdf.empty:
+            continue
+        g = pex.group_value_stats(pdf, ["index"])
+        g["index"] = g["index"].astype(str)
+        g["valid_fraction"] = g["count"] / g["count"].max()
+        # Keep the source dtype: plot files may use int or str plot ids.
+        g.insert(0, "plot_id", pdf["plot_id"].iloc[0])
+        out.append(g)
+        if full_percentiles:
+            pctl = pex.group_value_percentiles(pdf, ["index"])
+            pctl["index"] = pctl["index"].astype(str)
+            pctl.insert(0, "plot_id", pdf["plot_id"].iloc[0])
+            pctl_out.append(pctl)
+    percentiles = (pd.concat(pctl_out, ignore_index=True)
+                   if full_percentiles else None)
+    return pd.concat(out, ignore_index=True), percentiles
 
 
 # ==================================================================================
@@ -513,7 +684,7 @@ def write_manifest_report(
     """
     figures: List[Tuple[str, pathlib.Path]] = []
     if not args.skipplot:
-        job["figures_dir"].mkdir(parents=False, exist_ok=True)
+        job["figures_dir"].mkdir(parents=True, exist_ok=True)
         headline = (cfg.headline_index
                     if cfg.headline_index in set(metrics["index"]) else
                     sorted(metrics["index"].unique())[0])
@@ -553,6 +724,7 @@ def write_manifest_report(
     for title, figpath in figures:
         rel = figpath.relative_to(job["report_file"].parent).as_posix()
         lines += [f"## {title}", "", f"![{title}]({rel})", ""]
+    job["report_file"].parent.mkdir(parents=True, exist_ok=True)
     job["report_file"].write_text("\n".join(lines), encoding="utf-8")
     print(f"Report written: {job['report_file']}")
 
@@ -590,7 +762,7 @@ def plot_index_choropleth(
     ax.set_title(f"{job['sensor']} {job['run']} — per-plot mean {index} "
                  f"({job['region']}/{job['method']})")
     ax.set_aspect("equal")
-    outpath = job["figures_dir"] / f"SIplot_{index}_{job['region']}_{job['method']}.png"
+    outpath = job["figures_dir"] / f"INDEXplot_{index}_{job['region']}_{job['method']}.png"
     fig.savefig(outpath, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return outpath
@@ -630,7 +802,7 @@ def plot_index_distributions(
     if len(names) > max_indices:
         title += f" (first {max_indices} of {len(names)} indices)"
     ax.set_title(title)
-    outpath = job["figures_dir"] / f"SIplot_distributions_{job['region']}_{job['method']}.png"
+    outpath = job["figures_dir"] / f"INDEXplot_distributions_{job['region']}_{job['method']}.png"
     fig.savefig(outpath, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return outpath
@@ -745,7 +917,8 @@ if __name__ == '__main__':
     parser.add_argument("--path", type=str, default=None, help="The folder to crawl for SI00 manifests. By default it will search from the root dir of the git repo.")
     parser.add_argument("--plot-variant", type=str, default=None, help="Select a plot-file variant ({YYYYSiteName}_plots_{variant}[_vNN].geojson) instead of the mandatory main plot file. See the Plot_Layout spec (wiki Key-Files).")
     parser.add_argument("--join-trial-info", default=False, action="store_true", help="Join Documentation/Trial_Info/{YYYYSiteName}_trial_info.csv onto the plots via plot_id; the trial columns are carried into the trait tables.")
-    parser.add_argument("--indices", type=str, nargs="+", default=None, help="Restrict extraction to these indices (e.g. --indices NDVI NDREI). Default: all indices in each manifest.")
+    parser.add_argument("--indices", type=str, nargs="+", default=None, help="Restrict extraction to these indices (e.g. --indices NDVI NDREI). Default: all indices in each manifest. Changing the restriction does not invalidate existing per-plot parts - combine with --force.")
+    parser.add_argument("--full-percentiles", default=False, action="store_true", help="Also write the full 0-100 percentile profile per plot x index to PlotLevel/PE_INDEX_{REGION}_{METHOD}_plot_percentiles[...].parquet (long format; joined via plot_id).")
     parser.add_argument("-f", "--force", default=False, action="store_true", help="Force the re-creation of output files even if they are up to date. Default is to skip files that are newer than their inputs.")
     parser.add_argument("-s", "--skipplot", default=False, action="store_true", help="Skip the report figure generation (the markdown report is still written, without embeds).")
     parser.add_argument("--exclude-dir", type=str, nargs="+", default=[], help="One or more directory names to exclude from the crawl. e.g. --exclude-dir 2025_TestData")
