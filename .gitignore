@@ -282,3 +282,15 @@ USYD_Narrabri/2025_SIFCalibration/2025IAWatson/CALVIS/20250825/run_00/RAW SWIR/r
 !Code/
 !Code/**/*.py
 !Code/**/*.md
+
+# ---- upstream (generic template) additions, merged 2026-09-02 ----
+# reference/ thresholds shipped with the QC pipeline (DS02 port)
+!reference/
+!reference/**
+# Node-level structure-adoption audit reports (DM01_StructureAdopter)
+!*/DM01_AdoptionReport.md
+# Per-run issue tickets in the node trees (generic name; the
+# USYD_Narrabri run_*_Issues.yaml rule above covers that tree)
+!*_Issues.yaml
+# QC pipeline scratch tables — never git
+QC_Spectral_Tables/
