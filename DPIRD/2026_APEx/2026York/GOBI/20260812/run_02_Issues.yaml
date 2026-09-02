@@ -1,0 +1,42 @@
+# run_02_Issues.yaml - generated 2026-09-02
+schema_version: 1.0
+run: run_02
+sensor: GOBI
+triggers: [Deviations, Issues]                # mirrors RunOverview.csv bools; generator keeps in sync
+
+# ---- intent axis (DELETE entries that don't apply - never type new ones) ----
+intended_payloads: []
+deployables_placed: []
+
+# ---- outcome axis (one ticket per record; close each one) ----
+payload_outcomes:
+  # One ticket per payload. Close a ticket by setting 'state' to one of:
+  #   ok      - nothing was wrong with this payload (the other fields are then ignored - delete or keep them)
+  #   fixed   - had a problem, now reworked - data fully usable
+  #   caution - usable, but with caveats (explain in 'note')
+  #   failed  - unrecoverable - no usable data for this payload
+  # Or set 'wip' while it is still being worked on - the ticket stays OPEN (as does the default TODO).
+  # For fixed/caution/failed, also fill in 'detected_stage' and 'reason' ('note' is required when reason is 'other').
+  - payload: VNIR
+    state: wip             # open - under investigation (operator 2026-09-02)
+    detected_stage: field
+    reason: other
+    note: >-
+      Two linked findings, both under investigation before this ticket is
+      closed. (1) QC01 v2.1 fieldbook spec check FAIL: along-track
+      oversampling -31% (configured and actual; frame rate vs ground speed),
+      i.e. the flight was undersampled along-track; calculator spec passes,
+      sidelap 59.6-61.1% and GSD 1.4-1.5cm nominal. Consistent with the
+      operator readme.txt report that this run's VNIR ortho initially came
+      out 4x lower resolution (6cm/px); Bipul Neupane reprocessed the gpro
+      in GPT using run_01's DSM to obtain the full-resolution output
+      delivered here (see "Note - this gpro was processed using the DSM from
+      run01.txt" in T1_proc; ortho stem carries "DSMchanged"). (2) QC03 v1.4
+      FAIL: zeros-in-footprint 9.67% - however no extents/
+      hyper_extent.geojson exists in the gpro so the footprint fell back to
+      the border-connectivity classifier and the figure is likely inflated;
+      ROI dropout is only 0.73% (100% interior-connected). Verify against
+      the capture polygon before trusting either way. Context: along-rows
+      direction was attempted 3x on the day because of a GNSS error on
+      UWA's GOBI sensor; this run pairs with a UWA GOBI flight ~5 min apart
+      for the sensor-consistency comparison (UWA half pending from Warin).

@@ -1,0 +1,6 @@
+Run,RunFailed,Notes,Issues,Deviations
+run_00,True,YCD_Row1 - first along-rows attempt; small patch of cloud - operator marked discard; re-flown as run_01,False,False
+run_01,False,YCD_Row2 - second along-rows attempt; nominal,False,False
+run_02,False,YCD_Row3 - third along-rows attempt; VNIR ortho initially 4x lower resolution (6cm/px) - reprocessed in GPT with run_01's DSM for full-res output (see T1_proc note); pairs with UWA GOBI flight ~5 min apart for sensor-consistency comparison,True,True
+run_03,True,YCD_Range2 - along-ranges; VNIR lens cap not removed during collection - operator marked discard,False,False
+run_04,False,YCD_EW3 - East-West direction,False,False

@@ -26,3 +26,12 @@ project:
     description: ''
     ControlledEnvironment: null
     sensors: []
+  - name: York
+    year: 2026
+    season: ''
+    SubLocation: ''
+    latitude: .nan
+    longitude: .nan
+    description: ''
+    ControlledEnvironment: null
+    sensors: []
