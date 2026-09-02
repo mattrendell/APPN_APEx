@@ -31,6 +31,11 @@ Where results are saved depends on the level of the path provided:
 
 ``--no-save`` displays the figures interactively instead of saving them.
 
+The crawl follows ``DataLocation.yaml`` pointers (projects whose data
+lives outside this repo): pointed-at roots are crawled read-only where
+they resolve, run identity uses the repo-side virtual path, and
+pointers not reachable from this host are reported and skipped.
+
 Pairwise distribution statistics (Wasserstein-1 distances, seasonal
 drift) are planned but not yet implemented; they depend on the
 equivalence test under development in APEx_SensorCalibration (ET00/ET03).
@@ -79,7 +84,7 @@ Command-line Arguments
 
 __title__ = "Spectral run comparison"
 __author__ = "Arden Burrell"
-__version__ = "v1.7(26.08.2026)"
+__version__ = "v1.8(02.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -308,12 +313,22 @@ def gather_spectra_tables(
         Validated spectra tables.
     """
     print(f"Scanning {path} for extracted spectra tables. {pd.Timestamp.now()}")
-    files = sorted(f for f in path.rglob(f"QC_*_spectra_*.{file_type}")
-                   if f.parent.name == "QC_Spectral_Tables")
+    # ========== Crawl: direct tree + DataLocation.yaml pointer roots ==========
+    crawl_pairs, skipped_roots = cf.sweep_roots(path)
+    for msg in skipped_roots:
+        print(f"SKIPPED pointer (data unavailable on this host): {msg}")
+    virt_map: Dict[pathlib.Path, pathlib.Path] = {}
+    for real_root, virt_root in crawl_pairs:
+        for f in real_root.rglob(f"QC_*_spectra_*.{file_type}"):
+            if f.parent.name == "QC_Spectral_Tables":
+                virt_map.setdefault(f, virt_root / f.relative_to(real_root))
+    files = sorted(virt_map)
     if exclude_dirs:
         exclude_set = set(exclude_dirs)
         files = [f for f in files
-                 if not (set(p.name for p in f.parents) & exclude_set)]
+                 if not ((set(p.name for p in f.parents)
+                          | set(p.name for p in virt_map[f].parents))
+                         & exclude_set)]
     files = _exclude_flagged_runs(files, include_runs, include_duplicates)
     print(f"Found {len(files)} spectra table(s).")
 
@@ -1380,12 +1395,22 @@ def _gather_dhr_tables(
         when nothing usable was found.
     """
     print(f"Scanning {path} for per-run DHR comparison artifacts ...")
-    files = sorted(p for p in path.rglob("DHR_*_comparison.parquet")
-                   if p.parent.name == "QC02_SpectralCheck")
+    # ========== Crawl: direct tree + DataLocation.yaml pointer roots ==========
+    crawl_pairs, skipped_roots = cf.sweep_roots(path)
+    for msg in skipped_roots:
+        print(f"SKIPPED pointer (data unavailable on this host): {msg}")
+    virt_map: Dict[pathlib.Path, pathlib.Path] = {}
+    for real_root, virt_root in crawl_pairs:
+        for f in real_root.rglob("DHR_*_comparison.parquet"):
+            if f.parent.name == "QC02_SpectralCheck":
+                virt_map.setdefault(f, virt_root / f.relative_to(real_root))
+    files = sorted(virt_map)
     if exclude_dirs:
         exclude_set = set(exclude_dirs)
         files = [f for f in files
-                 if not (set(p.name for p in f.parents) & exclude_set)]
+                 if not ((set(p.name for p in f.parents)
+                          | set(p.name for p in virt_map[f].parents))
+                         & exclude_set)]
     files = _exclude_flagged_runs(files, include_runs, include_duplicates)
     comp_parts: List[pd.DataFrame] = []
     stats_parts: List[pd.DataFrame] = []
@@ -1396,7 +1421,7 @@ def _gather_dhr_tables(
             warn.warn(f"{fpath.name} has no matching delta-stats parquet; "
                       "skipping the pair (re-run QC02_SpectralCheck).")
             continue
-        run_dir = fpath.parents[3]  # QC02_SpectralCheck/QC_data/T1_proc/<run>
+        run_dir = virt_map[fpath].parents[3]  # repo-side identity path
         meta = cf.parse_APPN_dataset_path(run_dir)
         if not meta["valid"] or meta["run"] is None:
             warn.warn(f"Could not parse run identity for {run_dir} "

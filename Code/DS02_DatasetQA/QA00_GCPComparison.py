@@ -29,6 +29,11 @@ Where results are saved depends on the level of the path provided:
 
 ``--no-save`` displays the figures interactively instead of saving them.
 
+The crawl follows ``DataLocation.yaml`` pointers (projects whose data
+lives outside this repo): pointed-at roots are crawled read-only where
+they resolve, run identity uses the repo-side virtual path, and
+pointers not reachable from this host are reported and skipped.
+
 Command-line Arguments
 ----------------------
 --path : str, optional
@@ -72,7 +77,7 @@ Command-line Arguments
 
 __title__ = "GCP run comparison"
 __author__ = "Arden Burrell"
-__version__ = "v1.1(26.08.2026)"
+__version__ = "v1.2(02.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -434,21 +439,31 @@ def gather_distance_artefacts(
         return bool(exclude_set
                     and (set(par.name for par in p.parents) & exclude_set))
 
+    # ========== Crawl: direct tree + DataLocation.yaml pointer roots ==========
+    crawl_pairs, skipped_roots = cf.sweep_roots(path)
+    for msg in skipped_roots:
+        print(f"SKIPPED pointer (data unavailable on this host): {msg}")
     candidates: Dict[Any, pathlib.Path] = {}
+    # real path -> repo-side virtual path (identity); reads stay real
+    virt_map: Dict[pathlib.Path, pathlib.Path] = {}
     # Contract location first, then pre-migration top level, so the
     # subfolder copy wins for a stem present in both; within each
     # location parquet is listed before csv and never overwritten.
-    for subdir in ("QC00_GCPCheck", "QC_data"):
-        for ext in ("parquet", "csv"):
-            for f in path.rglob(f"QC_GCP*_distances*.{ext}"):
-                if _excluded(f) or f.parent.name != subdir:
-                    continue
-                if subdir == "QC00_GCPCheck" \
-                        and f.parent.parent.name != "QC_data":
-                    continue
-                qc_data = (f.parent if subdir == "QC_data"
-                           else f.parent.parent)
-                candidates.setdefault((qc_data, f.stem), f)
+    for real_root, virt_root in crawl_pairs:
+        for subdir in ("QC00_GCPCheck", "QC_data"):
+            for ext in ("parquet", "csv"):
+                for f in real_root.rglob(f"QC_GCP*_distances*.{ext}"):
+                    virt = virt_root / f.relative_to(real_root)
+                    if (_excluded(f) or _excluded(virt)
+                            or f.parent.name != subdir):
+                        continue
+                    if subdir == "QC00_GCPCheck" \
+                            and f.parent.parent.name != "QC_data":
+                        continue
+                    qc_data = (f.parent if subdir == "QC_data"
+                               else f.parent.parent)
+                    candidates.setdefault((qc_data, f.stem), f)
+                    virt_map.setdefault(f, virt)
     files = sorted(candidates.values())
     print(f"Found {len(files)} distance table(s).")
 
@@ -460,7 +475,9 @@ def gather_distance_artefacts(
         exclusion = iy.run_exclusion(run_dir.parent, run_dir.name,
                                      include_runs=include_runs,
                                      include_duplicates=include_duplicates)
-        entries.append(_load_entry(fpath, run_dir=run_dir,
+        # identity from the repo-side virtual path; table IO stays real
+        entries.append(_load_entry(fpath,
+                                   run_dir=virt_map[fpath].parents[depth],
                                    verbose=verbose, exclusion=exclusion))
     n_excl = sum(1 for e in entries if e.get("excluded"))
     if n_excl:

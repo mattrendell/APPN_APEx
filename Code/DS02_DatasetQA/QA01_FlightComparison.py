@@ -7,6 +7,12 @@ assembles cross-run tables, flags acquisition anomalies, and produces
 comparison figures: one point/line per run so acquisition conditions,
 exposure tuning, and QC flags can be compared across a whole campaign.
 
+The crawl follows ``DataLocation.yaml`` pointers (projects whose data
+lives outside this repo, e.g. USYD -> the APPN-42 estate): pointed-at
+roots are crawled read-only on hosts where they resolve, run identity
+(labels, parsing) always uses the repo-side virtual path, and pointers
+not reachable from this host are reported and skipped.
+
 QA01 consumes QC01's saved artefacts **only** — it never re-opens the
 gpro/graw bundles (the QA02/QA00 rule). Run QC01 first.
 
@@ -80,7 +86,7 @@ Command-line Arguments
 
 __title__ = "Flight comparison"
 __author__ = "Arden Burrell"
-__version__ = "v2.2(26.08.2026)"
+__version__ = "v2.3(02.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -275,7 +281,11 @@ def gather_runs(
 
     A run is any ``QC01_FlightCheck`` folder containing both the contract
     detail JSON (whose ``acquisition_report`` block carries the per-field
-    source-tagged report) and ``flight_lines.csv``. Runs flagged in their
+    source-tagged report) and ``flight_lines.csv``. The crawl follows
+    ``DataLocation.yaml`` pointers via :func:`cf.sweep_roots`: pointed-at
+    roots reachable from this host are crawled (reads only), each hit
+    keeps its repo-side virtual path for identity/labels, and unavailable
+    pointers are reported and skipped. Runs flagged in their
     date folder's ``RunOverview.csv`` are excluded unless opted in
     (see :func:`Code.functions.issue_yaml.run_exclusion`).
 
@@ -321,9 +331,21 @@ def gather_runs(
     run_rows, line_frames, exp_rows = [], [], []
     metas: List[Dict[str, str]] = []
     excluded: List[str] = []
-    for det_file in sorted(path.rglob("QC01_FlightCheck_detail.json")):
+    # ========== Crawl: direct tree + DataLocation.yaml pointer roots ==========
+    crawl_pairs, skipped_roots = cf.sweep_roots(path)
+    for msg in skipped_roots:
+        print(f"SKIPPED pointer (data unavailable on this host): {msg}")
+    # real detail path -> repo-side virtual path (identity/labels); reads
+    # always go through the real path, which may sit in a read-only estate
+    det_map: Dict[pathlib.Path, pathlib.Path] = {}
+    for real_root, virt_root in crawl_pairs:
+        for det in real_root.rglob("QC01_FlightCheck_detail.json"):
+            det_map.setdefault(det, virt_root / det.relative_to(real_root))
+    for det_file, virt_file in sorted(det_map.items(),
+                                      key=lambda kv: str(kv[1])):
         d = det_file.parent
-        if _excluded(det_file) or not (d / "flight_lines.csv").is_file():
+        if (_excluded(det_file) or _excluded(virt_file)
+                or not (d / "flight_lines.csv").is_file()):
             continue
         with open(det_file, encoding="utf-8") as fh:
             detail = json.load(fh)
@@ -331,13 +353,16 @@ def gather_runs(
         if not rep:
             warn.warn(f"{det_file}: no acquisition_report block - skipped.")
             continue
-        run_dir = det_file.parents[3]  # QC01_FlightCheck/QC_data/T1_proc/<run>
+        run_dir = virt_file.parents[3]  # QC01_FlightCheck/QC_data/T1_proc/<run>
+        real_run_dir = det_file.parents[3]
         meta = cf.parse_APPN_dataset_path(run_dir)
         if not meta["valid"] or meta["run"] is None:
             warn.warn(f"{det_file}: run path does not parse as an APPN run "
                       f"({meta['errors']}) - skipped.")
             continue
-        reason = iy.run_exclusion(run_dir.parent, run_dir.name,
+        # RunOverview.csv / Issues tickets are curated beside the data,
+        # so exclusion checks read the real (possibly pointed-at) tree
+        reason = iy.run_exclusion(real_run_dir.parent, real_run_dir.name,
                                   include_runs=include_runs,
                                   include_duplicates=include_duplicates)
         if reason is not None:

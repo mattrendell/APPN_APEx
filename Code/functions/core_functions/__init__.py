@@ -15,6 +15,8 @@ from .reporting import (resolve_qareports_dir, safe_filename_component,
 from .run_metadata import to_yaml_compatible, build_run_metadata, write_metadata_yaml
 from .band_wavelengths import band_wavelengths
 from .group_stats import group_value_stats, group_value_percentiles
+from .data_location import (DataLocationUnavailable, host_identity,
+                            find_pointer, resolve_path, sweep_roots)
 
 __all__ = ['parse_APPN_dataset_path', 'outputs_up_to_date',
            'run_sort_key', 'resolve_run_palette',
@@ -22,4 +24,6 @@ __all__ = ['parse_APPN_dataset_path', 'outputs_up_to_date',
            'markdown_table', 'scope_label',
            'to_yaml_compatible', 'build_run_metadata', 'write_metadata_yaml',
            'band_wavelengths',
-           'group_value_stats', 'group_value_percentiles']
+           'group_value_stats', 'group_value_percentiles',
+           'DataLocationUnavailable', 'host_identity', 'find_pointer',
+           'resolve_path', 'sweep_roots']
