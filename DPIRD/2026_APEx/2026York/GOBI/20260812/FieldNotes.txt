@@ -1,6 +1,6 @@
 DPIRD GOBI flights at York calibration trial (DPIRD project: 2026_CalibrationTrial_I_SIF_DPIRD, DPIRD-internal site name "York_F"; YCD = York Calibration Dpird).
 
-Five flights. All data collected with DPIRD's GOBI sensor mounted on UWA's M350 drone; data collected by Franco (UWA's own GOBI data for the same day collected by the DPIRD team). Along-rows flights were attempted three times because of the GNSS error in UWA's GOBI sensor.
+Five flights. All data collected with DPIRD's GOBI sensor mounted on UWA's M350 drone; data collected by Franco (UWA's own GOBI data for the same day collected by the DPIRD team). Along-rows flights were attempted three times because of the GNSS error in UWA's GOBI sensor and the clouds.
 
 run_00 (YCD_Row1)   - along-rows attempt 1; small patch of cloud -> discard, re-flown
 run_01 (YCD_Row2)   - along-rows attempt 2
@@ -8,4 +8,4 @@ run_02 (YCD_Row3)   - along-rows attempt 3; VNIR ortho initially 4x lower res (6
 run_03 (YCD_Range2) - along-ranges; VNIR lens cap not removed -> discard
 run_04 (YCD_EW3)    - East-West direction
 
-run_02 pairs with a UWA GOBI flight taken ~5 minutes apart (sensor-consistency comparison); UWA half to be delivered by Warin Chotirosniramit. Delivered by Bipul Neupane via FileSender 2026-09-02 (run_02 + updated QC_data panel files first; remaining runs to follow). See readme.txt (Bipul's original notes) in this folder.
+run_02 is the SIF Cali flight and pairs with a UWA GOBI flight taken ~5 minutes apart (sensor-consistency comparison); UWA half to be delivered by Warin Chotirosniramit. Delivered by Bipul Neupane via FileSender 2026-09-02 (run_02 + updated QC_data panel files first). Per Bipul's email 2026-09-02: the remaining flights are processed but DPIRD's own QA is pending; uploads are ~one run per day (uploading from home due to DPIRD upload speed), remaining runs expected by the following week. See readme.txt (Bipul's original notes) in this folder.
