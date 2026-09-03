@@ -1,8 +1,8 @@
 """Panel DHR reference library access + physical-set identification (§5b).
 
 Resolves the manufacturer DHR curves in ``reference/panels/<NODE>/`` for
-the QC02 observed-vs-expected comparison, implementing the
-``QC_PIPELINE_PLAN.md`` §5b rules:
+the QC02 observed-vs-expected comparison, implementing the §5b rules
+(design record: retired QC pipeline plan, git history):
 
 1. The gpro pipeline YAML is the primary pin for ELM tables — nominal
    ``Panel_ref`` signatures cannot identify hardware (24005 and 25005

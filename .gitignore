@@ -1,296 +1,64 @@
-#ignore all kind of files
+# ============================================================================
+# Data-store safety: this repo is designed to sit AT THE ROOT of a real data
+# tree (node folders full of sensor data live beside Code/). Ignore
+# everything by default and allowlist only code, docs and the
+# ProjectBuilder-maintained metadata files, so `git add -A` can never stage
+# collected data. Same pattern as the APPN-42 master repo.
+# ============================================================================
 *.*
 
-# Ignore GRYFN_logs folder entirely
-GRYFN_logs/
-
-# Ignore local backup snapshots and sync-report scratch space
-_backups/
-
-#except py files
+# ---- repo plumbing + top-level code/docs ----
+!.gitignore
+!.gitattributes
 !*.py
 !*.sh
 !*.md
-# Line-ending policy file (must be tracked so all hosts check out LF).
-!.gitattributes
-# Re-include the .github tree (the *.* rule above matches ".github" itself,
-# so git would never descend into it; skills/agent files live here).
+!/FolderStructureInfo.txt
+!/NodeSummary.yaml
+!/environment.yml
+
+# ---- data-tree depth rules ----
+# Ignore FILES at every depth inside top-level folders (this also catches
+# extension-less sensor files that *.* cannot match), while re-including
+# the DIRECTORIES so git can keep walking to the metadata files below.
+# Depth 7+ (tier folders and deeper) is pruned entirely.
+/*/*
+!/*/*/
+/*/*/*
+!/*/*/*/
+/*/*/*/*
+!/*/*/*/*/
+/*/*/*/*/*
+!/*/*/*/*/*/
+/*/*/*/*/*/*
+!/*/*/*/*/*/*/
+/*/*/*/*/*/*/*
+
+# ---- re-includes (must come after the depth rules) ----
 !.github/
+!.github/**
+!Code/**
+!reference/**
 !*FieldLog.csv
 !*ProjectsSummary.csv
-!*SyncSummary.csv
 !*RunOverview.csv
 !*ProjectSummary.yaml
-# Pointer files: a site dir whose data lives outside this repo holds one of
-# these instead of data (host-keyed data_root). Must be tracked.
-!*DataLocation.yaml
-!*NodeSummary.yaml
-!*docker-compose.yml
-# Shared conda env spec — single source of truth across hosts
-!/environment.yml
-# Add a depth rule
-USYD_Narrabri/*/*/*
-# Allow git to descend into dirs at every level under USYD_Narrabri (some
-# project/site folders have dots in their names, e.g. "2026I.A.Watson",
-# which would otherwise be ignored by the *.* rule at the top of this file).
-# At each level we:
-#   - re-include the directory (trailing slash) so git descends into it
-#   - re-ignore plain files at that level so nothing new leaks in
-# Allowlisted filenames (FieldLog.csv, RunOverview.csv, *.yaml, *.py, *.sh,
-# *.md, ...) still apply to pull specific files back in.
-!USYD_Narrabri/*/
-!USYD_Narrabri/*/*/
-!USYD_Narrabri/*/*/*/
-# Same dotted-dir problem in the node trees (e.g. USYD/2026_APEx/2026I.A.Watson):
-# re-include site-level directories so git can descend; trailing slash means
-# directories only, so plain files stay governed by the rules above.
-!*/*/*/
-USYD_Narrabri/*/*/*/*
-!USYD_Narrabri/*/*/*/*/
-USYD_Narrabri/*/*/*/*/*
-!USYD_Narrabri/*/*/*/*/*/
-USYD_Narrabri/*/*/*/*/*/*
-!sensor_platform_paths/*
-# Re-allow RunOverview.csv and FieldLog.csv at any depth inside USYD_Narrabri
-# (these must come AFTER the cascade above to take precedence).
-!USYD_Narrabri/**/RunOverview.csv
-!USYD_Narrabri/**/FieldLog.csv
-# Re-allow the per-run issue-YAML ticket files (P9, PROCESSING_STATUS_PLAN
-# §3.1) — operator metadata in the same class as RunOverview.csv: git-tracked,
-# created by ProjectBuilder.py on demand or by PS00 on schedule (any host).
-!USYD_Narrabri/**/run_*_Issues.yaml
-# Re-allow README.md stubs auto-seeded by ProjectBuilder.py into
-# site-level Documentation/{Plot_Layout,Trial_Info}/ folders. Must come
-# AFTER the depth cascade so the *.* / depth rules don't drop them.
-!USYD_Narrabri/**/Documentation/**/README.md
-# Add exceptions for YAML files in any Documents folder at any depth
-!/*/Documents/**/*.yaml
-# Allow YAML files in DataStorageLocationReports
-# !USYD_Narrabri/Documents/DataStorageLocationReports/*.yaml
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the enitre vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-\#recycle/
-@eaDir/
-Narrabri/2025_TestData/MOLE/20250707_Llara2/run_00/Tier0_raw/20250707Run2EM
-Narrabri/2025_TestData/MOLE/20250707_Llara2/run_01/Tier0_raw/config.py
-USYD_Narrabri/2025_SIFCalibration/2025IAWatson/CALVIS/20250825/run_00/RAW SWIR/raw_*
-
-# Narrabri/2025_TestData/MOLE/20250707_Llara2/run_00/Tier0_raw/20250707Run2EM
-# Narrabri/2025_TestData/MOLE/20250707_Llara2/run_01/Tier0_raw/config.py
-
-# P9 processing-status outputs (PS00_ProcessingStatus.py): generated tracking
-# data that rides the Unison sync with each project — never git. Must stay
-# LAST so it beats the directory re-include cascade above (NAS Tier1 is a
-# live git working tree; letting these parquets in would dirty it).
-**/Documentation/ProcessingStatus/
-**/StorageReports/ProcessingStatus/
-
-# Allow the Code/ folder and its Python files / markdown to be tracked.
-!Code/
-!Code/**/*.py
-!Code/**/*.md
-
-# ---- upstream (generic template) additions, merged 2026-09-02 ----
-# reference/ thresholds shipped with the QC pipeline (DS02 port)
-!reference/
-!reference/**
-# Node-level structure-adoption audit reports (DM01_StructureAdopter)
-!*/DM01_AdoptionReport.md
-# Per-run issue tickets in the node trees (generic name; the
-# USYD_Narrabri run_*_Issues.yaml rule above covers that tree)
 !*_Issues.yaml
-# QC pipeline scratch tables — never git
+!*/DM01_AdoptionReport.md
+!*/**/Documentation/**/README.md
+
+# ============================================================================
+# Ignores for extension-less / directory entries
+# ============================================================================
+__pycache__/
+.vscode/
+.idea/
+build/
+dist/
+venv/
+env/
+ENV/
+.venv
+.ipynb_checkpoints
 QC_Spectral_Tables/
+

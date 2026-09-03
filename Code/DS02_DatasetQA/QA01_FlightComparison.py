@@ -80,13 +80,17 @@ Command-line Arguments
 --include-duplicates : flag
     Include runs flagged ``DuplicateRun`` (orthogonal to
     --include-runs).
+--include-flight-deviations : flag
+    Include runs with declared flight deviations (axes deleted from
+    the ``flight_compliance`` list in their Issues.yaml; orthogonal to
+    --include-runs).
 """
 
 # ==============================================================================
 
 __title__ = "Flight comparison"
 __author__ = "Arden Burrell"
-__version__ = "v2.3(02.09.2026)"
+__version__ = "v2.3(03.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -104,6 +108,8 @@ from git import exc as git_exc
 import pandas as pd
 import warnings as warn
 
+import matplotlib
+matplotlib.use("Agg")  # headless; avoids GUI-backend freetype clash (mpl #32208)
 import matplotlib.legend as mlegend
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
@@ -150,6 +156,7 @@ def main(args: argparse.Namespace) -> None:
         path, args.start_date, args.end_date, exclude_dirs=args.exclude_dir,
         include_runs=args.include_runs,
         include_duplicates=args.include_duplicates,
+        include_flight_deviations=args.include_flight_deviations,
     )
     # ========== Step 3: cross-run tables ==========
     comparison = build_comparison(runs, lines, exposure)
@@ -276,6 +283,7 @@ def gather_runs(
     exclude_dirs: Optional[List[str]] = None,
     include_runs: Optional[str] = None,
     include_duplicates: bool = False,
+    include_flight_deviations: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Crawl ``path`` for QC01 outputs and load them.
 
@@ -310,6 +318,8 @@ def gather_runs(
         ``--include-runs`` severity ladder level (None = clean only).
     include_duplicates : bool, optional
         Include runs flagged ``DuplicateRun``. Default False.
+    include_flight_deviations : bool, optional
+        Include runs with declared flight deviations. Default False.
 
     Returns
     -------
@@ -362,9 +372,11 @@ def gather_runs(
             continue
         # RunOverview.csv / Issues tickets are curated beside the data,
         # so exclusion checks read the real (possibly pointed-at) tree
-        reason = iy.run_exclusion(real_run_dir.parent, real_run_dir.name,
-                                  include_runs=include_runs,
-                                  include_duplicates=include_duplicates)
+        reason = iy.run_exclusion(
+            real_run_dir.parent, real_run_dir.name,
+            include_runs=include_runs,
+            include_duplicates=include_duplicates,
+            include_flight_deviations=include_flight_deviations)
         if reason is not None:
             excluded.append(f"{run_dir}: {reason}")
             continue
@@ -423,7 +435,8 @@ def gather_runs(
             f"No QC01 outputs (QC01_FlightCheck_detail.json + "
             f"flight_lines.csv) found under {path}. "
             "Run QC01_FlightCheck.py first"
-            + (", or widen --include-runs / --include-duplicates "
+            + (", or widen --include-runs / --include-duplicates / "
+               "--include-flight-deviations "
                "(every discovered run was excluded above)."
                if excluded else "."))
     # ========== Finalise unique run_id labels from the identity union ==========
@@ -955,6 +968,12 @@ if __name__ == "__main__":
     parser.add_argument("--include-duplicates", action="store_true",
                         help="Include runs flagged DuplicateRun in "
                              "RunOverview.csv. Independent of --include-runs.")
+    parser.add_argument("--include-flight-deviations", action="store_true",
+                        help="Include runs with declared flight deviations "
+                             "(axes deleted from the flight_compliance list "
+                             "in their Issues.yaml, e.g. a solar-window "
+                             "sweep). Independent of --include-runs.")
     args = parser.parse_args()
+    cf.check_environment(_git_root)
 
     main(args)

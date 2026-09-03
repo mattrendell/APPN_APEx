@@ -14,8 +14,17 @@ run:
 
 Platforms that share an EM region (e.g. the CALVIS/GOBI shared Headwall
 VNIR) are pooled into one figure set by default, with the platform shown
-via line style and the run label; ``--split-platforms`` restores
-per-platform figures. The expected DHR comes from the per-run
+via line style and the run key table; ``--split-platforms`` restores
+per-platform figures. Legend entries stay compact (node code on
+multi-node scopes + date + run number); the full identity of every
+legend entry is written to ``run_key.csv``/``run_key.md`` next to the
+figures. Runs that only enter the comparison through an ``--include-*``
+opt-in flag are non-APPN-compliant and carry a superscript ``\u02e3``
+mark in their label; the reason lives in the run key.
+Multi-node scopes additionally get node colour families and a
+node-grouped legend where they resolve (see
+:func:`Code.functions.core_functions.resolve_node_run_palette`).
+The expected DHR comes from the per-run
 observed-vs-expected artifacts QC02 writes
 (``QC_data/QC02_SpectralCheck/DHR_*_comparison / _delta_stats``
 parquets, plan §5b), which are also aggregated into combined
@@ -81,6 +90,10 @@ Command-line Arguments
 --include-duplicates : flag
     Include runs flagged ``DuplicateRun`` (orthogonal to
     --include-runs).
+--include-flight-deviations : flag
+    Include runs with kept ``flight_deviations`` entries in their
+    Issues.yaml (deliberately off-spec flights; orthogonal to
+    --include-runs).
 --spec : str, optional
     Spectral-limits YAML (drift thresholds) relative to the repo root.
 """
@@ -109,8 +122,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import warnings as warn
+import matplotlib
+matplotlib.use("Agg")  # headless; avoids GUI-backend freetype clash (mpl #32208)
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.lines import Line2D
 import seaborn as sns
 
 # ========== Resolve git root (must happen before importing Code.functions.*) ==========
@@ -165,6 +181,7 @@ def main(
         path, file_type=args.type, exclude_dirs=args.exclude_dir,
         include_runs=args.include_runs,
         include_duplicates=args.include_duplicates,
+        include_flight_deviations=args.include_flight_deviations,
         verbose=args.verbose)
     if args.load_dir is not None:
         tables.extend(load_external_spectra(pathlib.Path(args.load_dir), args.type))
@@ -176,8 +193,8 @@ def main(
             + (" within the requested date window"
                if (args.start_date or args.end_date) else "")
             + ". Run QC02_SpectralCheck.py first to extract them, or widen "
-            "--include-runs / --include-duplicates if runs were excluded "
-            "above.")
+            "--include-runs / --include-duplicates / "
+            "--include-flight-deviations if runs were excluded above.")
 
     # ========== Save copies to --save-dir if provided ==========
     save_dir = pathlib.Path(args.save_dir) if args.save_dir is not None else None
@@ -190,6 +207,7 @@ def main(
         exclude_dirs=args.exclude_dir,
         include_runs=args.include_runs,
         include_duplicates=args.include_duplicates,
+        include_flight_deviations=args.include_flight_deviations,
         verbose=args.verbose)
 
     # ========== Combine, align wavelengths, and label the runs ==========
@@ -201,6 +219,12 @@ def main(
     # ========== Join each run's expected DHR onto the pixel frame ==========
     df, serial_check = join_expected_dhr(df, dhr["comp"])
     dhr["checks"].append(serial_check)
+
+    # ========== Run-key table: legend label -> full identity ==========
+    if out_dir is not None:
+        _write_run_key(
+            df, out_dir,
+            copy_dir=(save_dir / "comparison_figures") if save_dir else None)
 
     # ========== Cross-run comparison figures ==========
     plot_comparison_spectra(
@@ -281,12 +305,62 @@ def _clean_stale_outputs(
 
 
 # ==================================================================================
+def _write_run_key(
+        df: pd.DataFrame,
+        out_dir: pathlib.Path,
+        copy_dir: Optional[pathlib.Path] = None,
+    ) -> None:
+    """Write the legend-label -> full-identity key table (csv + md).
+
+    One row per distinct ``run_label`` with every identity column the
+    compact labels omit (project, site, sensor, gpro, ...), so figures
+    stay readable while provenance stays one file away.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Prepared comparison frame carrying ``run_label``.
+    out_dir : pathlib.Path
+        Scoped QA02 output folder.
+    copy_dir : pathlib.Path, optional
+        Extra directory to also write into (the --save-dir container's
+        ``comparison_figures/``). Default None.
+
+    Returns
+    -------
+    None
+    """
+    cols = [c for c in ["run_label", "node", "project", "site", "sensor",
+                        "date", "run", "gpro_nu", "run_flag_reason"]
+            if c in df.columns]
+    key = df[cols].drop_duplicates().copy()
+    key["date"] = pd.to_datetime(key["date"], errors="coerce").dt.strftime(
+        "%Y-%m-%d").fillna(key["date"].astype(str))
+    key = key.sort_values(cols[1:]).reset_index(drop=True)
+    note = ""
+    if key.get("run_flag_reason", pd.Series(dtype=str)).ne("").any():
+        note = ("\n\u02e3 = non-APPN-compliant run included via an "
+                "--include-* opt-in flag; see run_flag_reason.\n")
+    for dest in (out_dir, copy_dir):
+        if dest is None:
+            continue
+        dest.mkdir(parents=True, exist_ok=True)
+        key.to_csv(dest / "run_key.csv", index=False)
+        (dest / "run_key.md").write_text(
+            "# QA02 run key\n\nLegend label -> full run identity.\n\n"
+            + cf.markdown_table(key) + "\n" + note)
+    print(f"Wrote run_key.csv/.md ({len(key)} legend entr"
+          f"{'y' if len(key) == 1 else 'ies'}) to {out_dir}")
+
+
+# ==================================================================================
 def gather_spectra_tables(
         path: pathlib.Path,
         file_type: str = "parquet",
         exclude_dirs: Optional[List[str]] = None,
         include_runs: Optional[str] = None,
         include_duplicates: bool = False,
+        include_flight_deviations: bool = False,
         verbose: bool = False,
     ) -> List[pd.DataFrame]:
     """Find and load every extracted spectra table under *path*.
@@ -295,7 +369,9 @@ def gather_spectra_tables(
     ``QC_Spectral_Tables`` folders (the QC02 output convention) and
     loads the ones that pass schema validation. Runs flagged in their
     date folder's ``RunOverview.csv`` are excluded unless opted in
-    (see :func:`Code.functions.issue_yaml.run_exclusion`). Identity
+    (see :func:`Code.functions.issue_yaml.run_exclusion`); opted-in
+    runs gain a non-empty ``run_flag_reason`` column that
+    :func:`_mark_noncompliant_labels` renders as a superscript mark. Identity
     columns baked into each table by QC02 are overridden with the
     repo-side virtual-path identity (see :func:`_stamp_path_identity`)
     so they always match the path-stamped DHR artifacts.
@@ -312,6 +388,9 @@ def gather_spectra_tables(
         ``--include-runs`` severity ladder level (None = clean only).
     include_duplicates : bool, optional
         Include runs flagged ``DuplicateRun``. Default False.
+    include_flight_deviations : bool, optional
+        Include runs with kept ``flight_deviations`` entries. Default
+        False.
     verbose : bool, optional
         Print per-file diagnostics. Default False.
 
@@ -337,7 +416,9 @@ def gather_spectra_tables(
                  if not ((set(p.name for p in f.parents)
                           | set(p.name for p in virt_map[f].parents))
                          & exclude_set)]
-    files = _exclude_flagged_runs(files, include_runs, include_duplicates)
+    files, flagged = _exclude_flagged_runs(files, include_runs,
+                                           include_duplicates,
+                                           include_flight_deviations)
     print(f"Found {len(files)} spectra table(s).")
 
     tables: List[pd.DataFrame] = []
@@ -349,6 +430,7 @@ def gather_spectra_tables(
         df, restamped = _stamp_path_identity(df, virt_map[fpath],
                                              verbose=verbose)
         n_restamped += restamped
+        df["run_flag_reason"] = flagged.get(fpath.parents[3], "")
         tables.append(df)
     if n_restamped:
         print(f"  Re-stamped run identity on {n_restamped} table(s) whose "
@@ -434,13 +516,16 @@ def _exclude_flagged_runs(
         files: List[pathlib.Path],
         include_runs: Optional[str],
         include_duplicates: bool,
-    ) -> List[pathlib.Path]:
+        include_flight_deviations: bool = False,
+    ) -> Tuple[List[pathlib.Path], Dict[pathlib.Path, str]]:
     """Drop artifacts whose run is excluded by its RunOverview.csv flags.
 
     Both QC02 artifact families sit at
     ``<date>/<run>/T1_proc/QC_data/<subdir>/<file>``, so the run folder
     is always ``parents[3]``. One line per excluded run is printed with
-    the flag that re-includes it.
+    the flag that re-includes it. Kept runs that the default (clean-only)
+    policy would have excluded are returned as *flagged* so their labels
+    can carry the non-compliance mark.
 
     Parameters
     ----------
@@ -450,28 +535,41 @@ def _exclude_flagged_runs(
         ``--include-runs`` severity ladder level (None = clean only).
     include_duplicates : bool
         Include runs flagged ``DuplicateRun``.
+    include_flight_deviations : bool, optional
+        Include runs with kept ``flight_deviations`` entries. Default
+        False.
 
     Returns
     -------
-    list of pathlib.Path
-        The paths whose runs are included.
+    tuple of (list of pathlib.Path, dict of pathlib.Path to str)
+        The paths whose runs are included, and a ``{run_dir: reason}``
+        map for kept runs only included via an ``--include-*`` opt-in.
     """
     kept: List[pathlib.Path] = []
     excluded: Dict[pathlib.Path, str] = {}
+    flagged: Dict[pathlib.Path, str] = {}
+    opted_in = (include_runs is not None or include_duplicates
+                or include_flight_deviations)
     for fpath in files:
         run_dir = fpath.parents[3]
         if run_dir in excluded:
             continue
-        reason = iy.run_exclusion(run_dir.parent, run_dir.name,
-                                  include_runs=include_runs,
-                                  include_duplicates=include_duplicates)
+        reason = iy.run_exclusion(
+            run_dir.parent, run_dir.name,
+            include_runs=include_runs,
+            include_duplicates=include_duplicates,
+            include_flight_deviations=include_flight_deviations)
         if reason is None:
             kept.append(fpath)
+            if opted_in and run_dir not in flagged:
+                default_reason = iy.run_exclusion(run_dir.parent, run_dir.name)
+                if default_reason is not None:
+                    flagged[run_dir] = default_reason
         else:
             excluded[run_dir] = reason
     for run_dir, reason in sorted(excluded.items()):
         print(f"  EXCLUDED {run_dir}: {reason}")
-    return kept
+    return kept, flagged
 
 
 # ==================================================================================
@@ -780,8 +878,10 @@ def prepare_comparison_frame(
     cross-run mean is the pooled cross-platform reference; the snapping
     unit is the node's platform-mounted sensor so physically different
     units still snap rather than being assumed identical. Run labels
-    include only the metadata that differs across the frame (node/site/
-    platform are added only when more than one is present).
+    are compact display labels (node code on multi-node frames + date +
+    run number; see :func:`Code.functions.core_functions.build_run_labels`)
+    -- full identity lives in the run_key table, and project/site/
+    sensor/gpro only enter a label to break a collision.
 
     Parameters
     ----------
@@ -851,26 +951,21 @@ def prepare_comparison_frame(
             "Panel_ref signature or pre-v2.2 table; re-run QC02 to migrate). "
             "They are grouped by filename instead.")
 
-    # ========== Compact run labels: only include what differs ==========
-    date_str = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y%m%d")
-    date_str = date_str.fillna(df["date"].astype(str))
-    label_cols = []
-    if df["node"].nunique() > 1:
-        label_cols.append(df["node"].astype(str))
-    # same-named sites recur across projects on one node (I.A.Watson),
-    # so project must disambiguate the label wherever it differs
-    if "project" in df.columns and df["project"].nunique() > 1:
-        label_cols.append(df["project"].astype(str))
-    if df["site"].nunique() > 1:
-        label_cols.append(df["site"].astype(str))
-    # two platforms can share a date + run number: always disambiguate
-    if df["sensor"].nunique() > 1:
-        label_cols.append(df["sensor"].astype(str))
-    label_cols.append(date_str)
-    label_cols.append(df["run"].astype(str))
-    if "gpro_nu" in df.columns and df["gpro_nu"].nunique() > 1:
-        label_cols.append("g" + df["gpro_nu"].astype(str))
-    df["run_label"] = label_cols[0].str.cat(label_cols[1:], sep=" ")
+    # ========== Compact run labels: node + date + run; rest in run_key ==========
+    # Legend text stays short however many projects are in scope --
+    # project/site/sensor/gpro only enter a label to break a collision
+    # (full identity goes in the run_key table next to the figures).
+    df["date_label"] = pd.to_datetime(
+        df["date"], errors="coerce").dt.strftime("%Y%m%d")
+    df["date_label"] = df["date_label"].fillna(df["date"].astype(str))
+    extra = []
+    if "gpro_nu" in df.columns:
+        df["gpro_label"] = "g" + df["gpro_nu"].astype(str)
+        extra.append("gpro_label")
+    df = cf.build_run_labels(df, date_col="date_label", run_col="run",
+                             extra_cols=extra)
+    df = df.drop(columns=["date_label"] + extra)
+    _mark_noncompliant_labels(df)
 
     # ========== Split duplicate same-set targets flown in one run ==========
     df = _split_duplicate_targets(df)
@@ -886,6 +981,33 @@ def prepare_comparison_frame(
     df["residual_pct"] = df["refl_pct"] - df["_xrun_ref"]
     df = df.drop(columns="_xrun_ref")
     return df
+
+
+# ==================================================================================
+def _mark_noncompliant_labels(df: pd.DataFrame) -> None:
+    """Append a superscript mark to non-APPN-compliant runs' labels.
+
+    A run is non-compliant when it only entered the comparison through
+    an ``--include-*`` opt-in flag (non-empty ``run_flag_reason``, see
+    :func:`_exclude_flagged_runs`). Its ``run_label`` gains a trailing
+    ``\u02e3`` (superscript x) so the legend shows the run is off-spec;
+    the reason itself lives in the run_key table. Frames without the
+    column (e.g. external ``--load-dir`` tables) are left untouched.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Frame with ``run_label`` (modified in place).
+
+    Returns
+    -------
+    None
+    """
+    if "run_flag_reason" not in df.columns:
+        df["run_flag_reason"] = ""
+    df["run_flag_reason"] = df["run_flag_reason"].fillna("").astype(str)
+    flagged = df["run_flag_reason"].ne("")
+    df.loc[flagged, "run_label"] = df.loc[flagged, "run_label"] + "\u02e3"
 
 
 # ==================================================================================
@@ -1066,7 +1188,8 @@ def plot_comparison_spectra(
                     spectra collapse onto one line)
     - ``accuracy``  observed - expected DHR (pp, symlog); skipped when
                     no run in the group resolved a DHR
-    - ``precision`` residual vs the cross-run mean (% refl, symlog)
+    - ``precision`` residual vs the cross-run mean (% refl, symlog);
+                    skipped when the group has fewer than two runs
 
     Pooled platforms are told apart by line style (``style="sensor"``)
     and the run label. Symlog y-axes keep small systematic offsets
@@ -1110,7 +1233,11 @@ def plot_comparison_spectra(
     })
 
     # +++++ One palette for the whole call: stable colours across figures +++++
-    palette = sq.resolve_run_palette(list(df["run_label"].unique()))
+    # Multi-node scopes get node colour families where they resolve
+    # (adaptive; single-node scopes keep the qualitative tiers).
+    node_by_label = (df.drop_duplicates("run_label")
+                     .set_index("run_label")["node"].astype(str).to_dict())
+    palette = sq.resolve_node_run_palette(node_by_label)
 
     # +++++ Zero known-bad wavelengths (hard dip; NaN would be bridged) +++++
     data = df.copy()
@@ -1135,10 +1262,18 @@ def plot_comparison_spectra(
                  "precision")]:
             if var == "dhr_delta_pct" and not sub[var].notna().any():
                 continue  # no run in this group resolved a DHR
+            if suffix == "precision" and sub["run_label"].nunique() < 2:
+                # single-run precision is meaningless; still register the
+                # glob so a stale figure from a previous scope is removed
+                patterns.add("*_" + "_".join(
+                    cf.safe_filename_component(v)
+                    for v in (str(group), str(region), suffix)) + ".png")
+                continue
             _make_comparison_figure(
                 sub, str(sensor), str(group), str(region), var, label,
                 suffix=suffix, palette=palette, plot_dir=plot_dir, show=show,
                 errorbar=errorbar, style_col=style_col,
+                node_by_label=node_by_label,
                 copy_dir=copy_dir, verbose=verbose)
             parts = [cf.safe_filename_component(v)
                      for v in (str(sensor), str(group), str(region), suffix)]
@@ -1171,6 +1306,7 @@ def _make_comparison_figure(
         show: bool,
         errorbar: str,
         style_col: Optional[str] = None,
+        node_by_label: Optional[Dict[str, str]] = None,
         copy_dir: Optional[pathlib.Path] = None,
         verbose: bool = False,
     ) -> None:
@@ -1200,6 +1336,10 @@ def _make_comparison_figure(
     style_col : str, optional
         Column mapped to line style (``"sensor"`` when platforms are
         pooled). Default None.
+    node_by_label : dict of str to str, optional
+        ``{run_label: node}``; multi-node maps (without a style
+        dimension) switch the legend to node-grouped sections. Default
+        None (flat legend).
     copy_dir : pathlib.Path, optional
         Extra directory to also save the figure into (--save-dir
         container). Default None.
@@ -1225,15 +1365,23 @@ def _make_comparison_figure(
     )
     g.set_xlabels("Wavelength (nm)")
     g.set_ylabels(var_label)
+    multi_node = (node_by_label is not None
+                  and len(set(node_by_label.values())) > 1)
     if g.legend is not None:
-        g.legend.set_frame_on(False)
-        if style_col is None:
-            g.legend.set_title("Run")
-        plt.setp(g.legend.get_texts(), fontfamily="monospace")
+        if multi_node and style_col is None:
+            _grouped_run_legend(g, hue_order, node_by_label, palette)
+        else:
+            g.legend.set_frame_on(False)
+            if style_col is None:
+                g.legend.set_title("Run")
+            plt.setp(g.legend.get_texts(), fontfamily="monospace")
     g.figure.suptitle(
         f"Sensor: {sensor}, Target: {target}, EM range: {region}",
         y=0.98, fontweight="bold")
-    g.figure.subplots_adjust(top=0.92)
+    # Single-row grids are short, so the suptitle needs proportionally
+    # more headroom or it collides with the facet titles.
+    n_rows = int(np.ceil(len(list(g.axes.flat)) / 2))
+    g.figure.subplots_adjust(top=(0.85 if n_rows == 1 else 0.92))
 
     if is_symlog:
         # Symlog keeps small systematic offsets readable next to spikes
@@ -1273,6 +1421,66 @@ def _make_comparison_figure(
 
 
 # ==================================================================================
+def _grouped_run_legend(
+        g: sns.FacetGrid,
+        hue_order: List[str],
+        node_by_label: Dict[str, str],
+        palette: Dict[str, Any],
+    ) -> None:
+    """Replace the flat FacetGrid legend with node-grouped sections.
+
+    Bold node-name header rows with that node's runs indented beneath,
+    each entry stripped of its now-redundant node-code prefix. Only
+    used on multi-node scopes without a style dimension (rebuilding
+    would drop seaborn's style entries).
+
+    Parameters
+    ----------
+    g : sns.FacetGrid
+        Grid whose seaborn legend is replaced.
+    hue_order : list of str
+        Run labels in palette order (grouping preserves this order
+        within each node).
+    node_by_label : dict of str to str
+        ``{run_label: node}`` map.
+    palette : dict
+        Shared ``{run_label: colour}`` map.
+
+    Returns
+    -------
+    None
+    """
+    codes = cf.node_short_codes(set(node_by_label.values()))
+    handles: List[Line2D] = []
+    labels: List[str] = []
+    header_idx: List[int] = []
+    for node in sorted({str(v) for v in node_by_label.values()}):
+        runs = [l for l in hue_order if str(node_by_label.get(l)) == node]
+        if not runs:
+            continue
+        header_idx.append(len(labels))
+        handles.append(Line2D([], [], color="none"))
+        labels.append(node)
+        prefix = codes[node] + " "
+        for lab in runs:
+            handles.append(Line2D([], [], color=palette[lab], lw=1.6))
+            labels.append("  " + (lab[len(prefix):]
+                                  if lab.startswith(prefix) else lab))
+    g.legend.remove()
+    # reclaim the space seaborn reserved for its (wider) flat legend;
+    # g.tight_layout() would keep excluding the old legend rect
+    g.figure.tight_layout()
+    leg = g.figure.legend(handles, labels, loc="center left",
+                          bbox_to_anchor=(1.0, 0.5), frameon=False,
+                          handletextpad=0.6)
+    for i, txt in enumerate(leg.get_texts()):
+        if i in header_idx:
+            txt.set_fontweight("bold")
+        else:
+            txt.set_fontfamily("monospace")
+
+
+# ==================================================================================
 def _overlay_expected_dhr(
         g: sns.FacetGrid,
         sub: pd.DataFrame,
@@ -1297,7 +1505,9 @@ def _overlay_expected_dhr(
     -------
     None
     """
-    linestyles = ["--", ":", "-."]
+    # Dotted-first: the pooled-platform style dimension already renders
+    # CALVIS runs dashed, so a "--" reference would be indistinguishable.
+    linestyles = [(0, (1, 1)), "-.", (0, (3, 1, 1, 1))]
     for ref, ax in g.axes_dict.items():
         pdf = sub[(sub["Panel_ref"] == ref) & sub["exp_pct"].notna()]
         if pdf.empty:
@@ -1317,8 +1527,8 @@ def _overlay_expected_dhr(
         for i, (serials, curve) in enumerate(curves.values()):
             line, = ax.plot(
                 curve["wavelength"], curve["exp_pct"],
-                color="k", ls=linestyles[i % len(linestyles)], lw=1.3,
-                zorder=1, label="DHR " + "/".join(sorted(serials)))
+                color="k", ls=linestyles[i % len(linestyles)], lw=1.5,
+                zorder=10, label="DHR " + "/".join(sorted(serials)))
             handles.append(line)
         ax.legend(handles=handles, loc="best", fontsize=7, frameon=False)
 
@@ -1357,6 +1567,7 @@ def aggregate_dhr_comparisons(
         exclude_dirs: Optional[List[str]] = None,
         include_runs: Optional[str] = None,
         include_duplicates: bool = False,
+        include_flight_deviations: bool = False,
         verbose: bool = False,
     ) -> Dict[str, Any]:
     """Aggregate the per-run QC02 DHR comparisons across runs (ex DT01).
@@ -1384,6 +1595,9 @@ def aggregate_dhr_comparisons(
         ``--include-runs`` severity ladder level (None = clean only).
     include_duplicates : bool, optional
         Include runs flagged ``DuplicateRun``. Default False.
+    include_flight_deviations : bool, optional
+        Include runs with kept ``flight_deviations`` entries. Default
+        False.
     verbose : bool, optional
         Print per-file diagnostics. Default False.
 
@@ -1409,10 +1623,12 @@ def aggregate_dhr_comparisons(
                            "comp": None}
 
     # ========== Gather the per-run artifacts ==========
-    comp, stats = _gather_dhr_tables(path, exclude_dirs,
-                                     include_runs=include_runs,
-                                     include_duplicates=include_duplicates,
-                                     verbose=verbose)
+    comp, stats = _gather_dhr_tables(
+        path, exclude_dirs,
+        include_runs=include_runs,
+        include_duplicates=include_duplicates,
+        include_flight_deviations=include_flight_deviations,
+        verbose=verbose)
     if comp is None or stats is None:
         out["checks"].append((
             "dhr_within_day_drift", "not_checked",
@@ -1454,6 +1670,7 @@ def _gather_dhr_tables(
         exclude_dirs: Optional[List[str]] = None,
         include_runs: Optional[str] = None,
         include_duplicates: bool = False,
+        include_flight_deviations: bool = False,
         verbose: bool = False,
     ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """Load and identity-stamp every per-run DHR artifact pair under *path*.
@@ -1474,6 +1691,9 @@ def _gather_dhr_tables(
         ``--include-runs`` severity ladder level (None = clean only).
     include_duplicates : bool, optional
         Include runs flagged ``DuplicateRun``. Default False.
+    include_flight_deviations : bool, optional
+        Include runs with kept ``flight_deviations`` entries. Default
+        False.
     verbose : bool, optional
         Print per-file diagnostics. Default False.
 
@@ -1500,7 +1720,9 @@ def _gather_dhr_tables(
                  if not ((set(p.name for p in f.parents)
                           | set(p.name for p in virt_map[f].parents))
                          & exclude_set)]
-    files = _exclude_flagged_runs(files, include_runs, include_duplicates)
+    files, flagged = _exclude_flagged_runs(files, include_runs,
+                                           include_duplicates,
+                                           include_flight_deviations)
     comp_parts: List[pd.DataFrame] = []
     stats_parts: List[pd.DataFrame] = []
     for fpath in tqdm(files, desc="Loading DHR artifacts"):
@@ -1521,6 +1743,7 @@ def _gather_dhr_tables(
             "site": str(meta["site"]), "sensor": str(meta["sensor"]),
             "date": pd.Timestamp(meta["date"]).strftime("%Y%m%d"),
             "run_number": int(meta["run"]), "run_dir": str(run_dir),
+            "run_flag_reason": flagged.get(fpath.parents[3], ""),
         }
         comp = pd.read_parquet(fpath)
         region = str(comp["EM_Region"].iloc[0])
@@ -1546,9 +1769,10 @@ def _apply_dhr_run_labels(
     ) -> None:
     """Add compact ``run_label`` columns shared by both DHR frames.
 
-    Mirrors :func:`prepare_comparison_frame`: node/project/site enter the
-    label only when more than one is present across the union of both
-    frames; date and run number always do.
+    Mirrors :func:`prepare_comparison_frame`: labels are built by
+    :func:`Code.functions.core_functions.build_run_labels` on the union
+    of both frames' run identities, so the frames always agree and only
+    collision-breaking metadata enters the text.
 
     Parameters
     ----------
@@ -1560,16 +1784,14 @@ def _apply_dhr_run_labels(
     -------
     None
     """
-    ident_cols = ["node", "project", "site"]
-    union = pd.concat([comp[ident_cols], stats[ident_cols]])
+    ident_cols = ["node", "project", "site", "sensor", "date", "run_number"]
+    union = pd.concat([comp[ident_cols], stats[ident_cols]]).drop_duplicates()
+    union = cf.build_run_labels(union, date_col="date", run_col="run_number")
+    union = union.drop(columns="node_label")
     for df in (comp, stats):
-        parts = []
-        for col in ident_cols:
-            if union[col].nunique() > 1:
-                parts.append(df[col].astype(str))
-        parts.append(df["date"].astype(str))
-        parts.append("run_" + df["run_number"].astype(int).astype(str).str.zfill(2))
-        df["run_label"] = parts[0].str.cat(parts[1:], sep=" ")
+        merged = df.merge(union, on=ident_cols, how="left")
+        df["run_label"] = merged["run_label"].to_numpy()
+        _mark_noncompliant_labels(df)
 
 
 # ==================================================================================
@@ -1672,6 +1894,7 @@ if __name__ == "__main__":
     parser.add_argument("--exclude-dir", type=str, nargs="+", default=[], help="Directory names to exclude from the table search.")
     parser.add_argument("--include-runs", type=str, default=None, choices=["untriaged", "degraded", "failed"], help="Cumulative severity ladder for runs flagged in RunOverview.csv. Default: clean runs only (no flags, Deviations only, or Issues with every ticket closed ok/fixed). untriaged also includes Issues runs with open TODO/wip tickets or no Issues.yaml yet; degraded adds confirmed caution/failed tickets (and unparseable yamls); failed adds RunFailed runs.")
     parser.add_argument("--include-duplicates", default=False, action="store_true", help="Include runs flagged DuplicateRun in RunOverview.csv (reprocessings of another run's raw, e.g. BaseStation GNSS re-runs). Independent of --include-runs.")
+    parser.add_argument("--include-flight-deviations", default=False, action="store_true", help="Include runs with kept flight_deviations entries in their Issues.yaml (deliberately off-spec flights, e.g. a solar-window sweep). Independent of --include-runs.")
     parser.add_argument("--spec", type=str, default="reference/thresholds/spectral_limits.yml", help="Spectral-limits YAML relative to the repo root (within-day drift thresholds; the advisory drift check reports not_checked if missing).")
     parser.add_argument("-v", "--verbose", default=False, action="store_true", help="Enable verbose output.")
 
@@ -1708,4 +1931,5 @@ if __name__ == "__main__":
     os.chdir(path)
 
     # ========== Parse Args to main function ==========
+    cf.check_environment(_git_root)
     main(args, path)
