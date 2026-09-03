@@ -1,3 +1,4 @@
 Year,Month,Day,Sensor,Technician,Runs,Site,MakeNotesFile,MakeTableFile,CheckSum
 2026,7,30,GOBI,Connor,1,I.A.Watson,True,True,71940750.0
 2026,7,30,CALVIS,Connor,1,I.A.Watson,True,True,90828495.0
+2026,9,1,GOBI,Connor,3,I.A.Watson,True,True,6209942.0

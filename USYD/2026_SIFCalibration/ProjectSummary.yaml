@@ -30,4 +30,4 @@ project:
     ControlledEnvironment: null
     sensors:
     - CALVIS: 1
-    - GOBI: 1
+    - GOBI: 2
