@@ -34,7 +34,12 @@ Where results are saved depends on the level of the path provided:
 The crawl follows ``DataLocation.yaml`` pointers (projects whose data
 lives outside this repo): pointed-at roots are crawled read-only where
 they resolve, run identity uses the repo-side virtual path, and
-pointers not reachable from this host are reported and skipped.
+pointers not reachable from this host are reported and skipped. Run
+identity baked into the spectra tables by QC02 (node/site/etc) is
+overridden by the virtual-path identity, so tables generated on a
+different tree (the estate, another node's internal layout) still
+join their DHR artifacts; ``--load-dir`` tables keep their baked
+identity (no meaningful path).
 
 Pairwise distribution statistics (Wasserstein-1 distances, seasonal
 drift) are planned but not yet implemented; they depend on the
@@ -84,7 +89,7 @@ Command-line Arguments
 
 __title__ = "Spectral run comparison"
 __author__ = "Arden Burrell"
-__version__ = "v1.8(02.09.2026)"
+__version__ = "v1.9(03.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -290,7 +295,10 @@ def gather_spectra_tables(
     ``QC_Spectral_Tables`` folders (the QC02 output convention) and
     loads the ones that pass schema validation. Runs flagged in their
     date folder's ``RunOverview.csv`` are excluded unless opted in
-    (see :func:`Code.functions.issue_yaml.run_exclusion`).
+    (see :func:`Code.functions.issue_yaml.run_exclusion`). Identity
+    columns baked into each table by QC02 are overridden with the
+    repo-side virtual-path identity (see :func:`_stamp_path_identity`)
+    so they always match the path-stamped DHR artifacts.
 
     Parameters
     ----------
@@ -333,11 +341,92 @@ def gather_spectra_tables(
     print(f"Found {len(files)} spectra table(s).")
 
     tables: List[pd.DataFrame] = []
+    n_restamped = 0
     for fpath in tqdm(files, desc="Loading spectra tables"):
         df = _load_and_validate_table(fpath, file_type, verbose=verbose)
-        if df is not None:
-            tables.append(df)
+        if df is None:
+            continue
+        df, restamped = _stamp_path_identity(df, virt_map[fpath],
+                                             verbose=verbose)
+        n_restamped += restamped
+        tables.append(df)
+    if n_restamped:
+        print(f"  Re-stamped run identity on {n_restamped} table(s) whose "
+              "baked columns disagreed with the repo-side path (QC02 run "
+              "on a different tree, e.g. the estate or another node's "
+              "internal layout).")
     return tables
+
+
+# ==================================================================================
+def _stamp_path_identity(
+        df: pd.DataFrame,
+        virt_path: pathlib.Path,
+        verbose: bool = False,
+    ) -> Tuple[pd.DataFrame, int]:
+    """Override baked identity columns with the repo-side path identity.
+
+    QC02 bakes node/site/etc into the table at extraction time, so
+    tables generated on a different tree (the APPN-42 estate, another
+    node's internal layout) carry an identity that never matches the
+    path-stamped DHR artifacts and silently miss the expected-DHR join
+    (:func:`join_expected_dhr`). The virtual path is the single source
+    of truth for run identity, matching :func:`_gather_dhr_tables`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Validated spectra table.
+    virt_path : pathlib.Path
+        Repo-side virtual path of the table
+        (``<date>/<run>/T1_proc/QC_data/QC_Spectral_Tables/<file>``).
+    verbose : bool, optional
+        Print per-table restamp diagnostics. Default False.
+
+    Returns
+    -------
+    tuple of (pd.DataFrame, int)
+        The table (identity overridden where the path parses) and 1
+        when any baked value was changed, else 0.
+    """
+    run_dir = virt_path.parents[3]
+    meta = cf.parse_APPN_dataset_path(run_dir)
+    if not meta["valid"] or meta["run"] is None:
+        if verbose:
+            tqdm.write(f"  Keeping baked identity for {virt_path.name}: "
+                       f"could not parse {run_dir} ({meta['errors']}).")
+        return df, 0
+    ident = {
+        "node": str(meta["node"]), "project": str(meta["project"]),
+        "site": str(meta["site"]), "sensor": str(meta["sensor"]),
+        "date": pd.Timestamp(meta["date"]).strftime("%Y%m%d"),
+        "run": f"run_{int(meta['run']):02d}",
+    }
+
+    # +++++ Count only genuine disagreements, not formatting drift +++++
+    # (baked sites keep the year prefix, dates vary in format, run
+    # numbers vary in zero padding)
+    def _matches(col: str, val: str) -> bool:
+        s = df[col].astype(str)
+        if col == "site":
+            s = s.str.replace(r"^\d{4}", "", regex=True)
+        elif col == "date":
+            s = pd.to_datetime(s, errors="coerce").dt.strftime("%Y%m%d")
+        elif col == "run":
+            s = ("run_" + s.str.extract(r"(\d+)", expand=False)
+                 .fillna("-1").astype(int).astype(str).str.zfill(2))
+        return bool((s == val).all())
+
+    changed = [col for col, val in ident.items()
+               if col in df.columns and not _matches(col, val)]
+    source_path = df.attrs.get("source_path")
+    df = df.assign(**ident)
+    if source_path is not None:
+        df.attrs["source_path"] = source_path
+    if changed and verbose:
+        tqdm.write(f"  Re-stamped {virt_path.name}: baked {sorted(changed)} "
+                   "disagreed with the path identity.")
+    return df, int(bool(changed))
 
 
 # ==================================================================================
