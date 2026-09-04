@@ -1,10 +1,10 @@
-# Plot Layout — 2026Merredin
+# Plot Layout — 2026York
 
 Site-specific notes for the files in this folder. For the
 APPN-wide spec see the [Plot Delineation protocol](https://github.com/ArdenB/APPN-Aerial-Standard-Operating-Procedures/blob/main/Protocols/PlotProtocols/PlotDelineation/Plot_Delineation.md).
 
 ## Current main file
-- `2026Merredin_plots.geojson` — fitted YYYY-MM-DD by <name>,
+- `2026York_plots.geojson` — fitted YYYY-MM-DD by <name>,
   method <FIELDimageR | DPIRD | GPT>.
 
 ## Variants in use
@@ -18,7 +18,7 @@ APPN-wide spec see the [Plot Delineation protocol](https://github.com/ArdenB/APP
 ## Deprecated files
 | File | Replaced on | Reason | Superseded by |
 | --- | --- | --- | --- |
-| `2026Merredin_plots_YYYYMMDD_deprecated.geojson` | YYYY-MM-DD | <reason> | `2026Merredin_plots.geojson` |
+| `2026York_plots_YYYYMMDD_deprecated.geojson` | YYYY-MM-DD | <reason> | `2026York_plots.geojson` |
 
 ## Known issues / quirks
 - e.g. "HIRES flight 2025-10-12 had a 7 cm N–S offset — corrected in

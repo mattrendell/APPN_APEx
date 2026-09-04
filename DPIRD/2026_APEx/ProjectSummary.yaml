@@ -33,5 +33,5 @@ project:
     latitude: .nan
     longitude: .nan
     description: ''
-    ControlledEnvironment: null
+    ControlledEnvironment: false
     sensors: []
