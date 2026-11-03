@@ -78,19 +78,24 @@ Command-line Arguments
     with open TODO/wip tickets; ``degraded`` adds confirmed
     caution/failed tickets; ``failed`` adds RunFailed runs.
 --include-duplicates : flag
-    Include runs flagged ``DuplicateRun`` (orthogonal to
-    --include-runs).
+    Include every member of each duplicate group, not just its winner
+    (the ``BestRun`` row, or the original when none is flagged;
+    orthogonal to --include-runs).
 --include-flight-deviations : flag
     Include runs with declared flight deviations (axes deleted from
     the ``flight_compliance`` list in their Issues.yaml; orthogonal to
     --include-runs).
+--exclude-accepted : flag
+    Exclude runs whose QC findings are all closed ``accepted``
+    (reviewed-but-tolerable fails). Default: included, annotated in the
+    crawl output.
 """
 
 # ==============================================================================
 
 __title__ = "Flight comparison"
 __author__ = "Arden Burrell"
-__version__ = "v2.3(03.09.2026)"
+__version__ = "v2.4(04.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -157,6 +162,7 @@ def main(args: argparse.Namespace) -> None:
         include_runs=args.include_runs,
         include_duplicates=args.include_duplicates,
         include_flight_deviations=args.include_flight_deviations,
+        exclude_accepted=args.exclude_accepted,
     )
     # ========== Step 3: cross-run tables ==========
     comparison = build_comparison(runs, lines, exposure)
@@ -284,6 +290,7 @@ def gather_runs(
     include_runs: Optional[str] = None,
     include_duplicates: bool = False,
     include_flight_deviations: bool = False,
+    exclude_accepted: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Crawl ``path`` for QC01 outputs and load them.
 
@@ -295,7 +302,8 @@ def gather_runs(
     keeps its repo-side virtual path for identity/labels, and unavailable
     pointers are reported and skipped. Runs flagged in their
     date folder's ``RunOverview.csv`` are excluded unless opted in
-    (see :func:`Code.functions.issue_yaml.run_exclusion`).
+    (see :func:`Code.functions.issue_yaml.run_decision`); runs with
+    accepted QC findings are included and their annotations printed.
 
     ``run_id`` is a unique display label built from the parsed storage
     identity of each run folder (project/site/sensor included only where
@@ -320,6 +328,9 @@ def gather_runs(
         Include runs flagged ``DuplicateRun``. Default False.
     include_flight_deviations : bool, optional
         Include runs with declared flight deviations. Default False.
+    exclude_accepted : bool, optional
+        Exclude runs whose findings are all closed ``accepted``
+        (default: included, annotated). Default False.
 
     Returns
     -------
@@ -341,6 +352,7 @@ def gather_runs(
     run_rows, line_frames, exp_rows = [], [], []
     metas: List[Dict[str, str]] = []
     excluded: List[str] = []
+    accepted_notes: List[str] = []
     # ========== Crawl: direct tree + DataLocation.yaml pointer roots ==========
     crawl_pairs, skipped_roots = cf.sweep_roots(path)
     for msg in skipped_roots:
@@ -372,14 +384,17 @@ def gather_runs(
             continue
         # RunOverview.csv / Issues tickets are curated beside the data,
         # so exclusion checks read the real (possibly pointed-at) tree
-        reason = iy.run_exclusion(
+        decision = iy.run_decision(
             real_run_dir.parent, real_run_dir.name,
             include_runs=include_runs,
             include_duplicates=include_duplicates,
-            include_flight_deviations=include_flight_deviations)
-        if reason is not None:
-            excluded.append(f"{run_dir}: {reason}")
+            include_flight_deviations=include_flight_deviations,
+            exclude_accepted=exclude_accepted)
+        if not decision.included:
+            excluded.append(f"{run_dir}: {decision.reason}")
             continue
+        accepted_notes.extend(f"{run_dir}: {a}"
+                              for a in decision.annotations)
         fl = pd.read_csv(d / "flight_lines.csv",
                          parse_dates=["start_utc", "mid_utc", "end_utc"])
         # run_id is finalised after the crawl (labels need the union);
@@ -429,6 +444,11 @@ def gather_runs(
     if excluded:
         print(f"EXCLUDED {len(excluded)} flagged run(s) (RunOverview.csv):")
         for line in excluded:
+            print(f"  {line}")
+    if accepted_notes:
+        print(f"INCLUDED {len(accepted_notes)} accepted finding(s) "
+              "(--exclude-accepted drops these runs):")
+        for line in accepted_notes:
             print(f"  {line}")
     if not run_rows:
         raise FileNotFoundError(
@@ -966,13 +986,20 @@ if __name__ == "__main__":
                              "adds confirmed caution/failed tickets; failed "
                              "adds RunFailed runs.")
     parser.add_argument("--include-duplicates", action="store_true",
-                        help="Include runs flagged DuplicateRun in "
-                             "RunOverview.csv. Independent of --include-runs.")
+                        help="Include every member of each RunOverview.csv "
+                             "duplicate group, not just its winner (the "
+                             "BestRun row, or the DupOf original when none "
+                             "is flagged). Independent of --include-runs.")
     parser.add_argument("--include-flight-deviations", action="store_true",
                         help="Include runs with declared flight deviations "
                              "(axes deleted from the flight_compliance list "
                              "in their Issues.yaml, e.g. a solar-window "
                              "sweep). Independent of --include-runs.")
+    parser.add_argument("--exclude-accepted", action="store_true",
+                        help="Exclude runs whose QC findings are all closed "
+                             "'accepted' (reviewed-but-tolerable fails). "
+                             "Default: included, annotated in the crawl "
+                             "output.")
     args = parser.parse_args()
     cf.check_environment(_git_root)
 

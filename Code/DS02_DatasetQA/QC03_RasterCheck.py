@@ -92,7 +92,7 @@ Command-line Arguments
 
 __title__ = "Raster check"
 __author__ = "Arden Burrell"
-__version__ = "v1.6(03.09.2026)"
+__version__ = "v1.7(04.09.2026)"
 __email__ = "arden.burrell@sydney.edu.au"
 
 # ==============================================================================
@@ -135,6 +135,7 @@ if _git_root not in sys.path:
 import Code.functions.core_functions as cf
 import Code.functions.spectral_qc as sq
 import Code.functions.qc_report as qr
+import Code.functions.issue_yaml as iy
 
 
 # ==================================================================================
@@ -352,6 +353,7 @@ def process_run(
                          p["bin"].stat().st_mtime, unit="s",
                          tz="UTC").isoformat()}
         for p in products}
+    iy.ensure_finding_tickets(run_dir.parent, run_dir.name, report)
     qr.write_report(qc_data, report)
     qr.update_qc_report(qc_data, report)
     row.update({"status": report["status"], "reason": None})
